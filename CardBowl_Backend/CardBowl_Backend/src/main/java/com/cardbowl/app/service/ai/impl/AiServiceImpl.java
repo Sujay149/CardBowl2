@@ -7,6 +7,7 @@ import com.cardbowl.app.common.util.CommonUtil;
 import com.cardbowl.app.dto.card.BusinessCardDTO;
 import com.cardbowl.app.dto.card.EnrichRequestDTO;
 import com.cardbowl.app.dto.card.OcrRequestDTO;
+import com.cardbowl.app.dto.card.PitchGenerateRequestDTO;
 import com.cardbowl.app.dto.card.PitchResultDTO;
 import com.cardbowl.app.dto.card.PitchWebSourceDTO;
 import com.cardbowl.app.dto.profile.ProfileImportRequestDTO;
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -155,13 +157,7 @@ public class AiServiceImpl implements AiService {
         requireAtLeastOneAiClient();
 
         String userPrompt = buildEnrichPrompt(request);
-        String rawResponse;
-
-        if (openAiClient.isConfigured()) {
-            rawResponse = openAiClient.chat(ENRICH_SYSTEM_PROMPT, userPrompt);
-        } else {
-            rawResponse = geminiClient.chat(ENRICH_SYSTEM_PROMPT + "\n\n" + userPrompt);
-        }
+        String rawResponse = chatWithFallback(ENRICH_SYSTEM_PROMPT, userPrompt, "enrich");
 
         JsonNode json = AiResponseParser.parseJsonFromResponse(rawResponse, objectMapper);
 
@@ -201,13 +197,7 @@ public class AiServiceImpl implements AiService {
 
         // Build and send pitch prompt
         String userPrompt = buildPitchPrompt(card, userProfile, pitchType);
-        String rawResponse;
-
-        if (openAiClient.isConfigured()) {
-            rawResponse = openAiClient.chat(PITCH_SYSTEM_PROMPT, userPrompt);
-        } else {
-            rawResponse = geminiClient.chat(PITCH_SYSTEM_PROMPT + "\n\n" + userPrompt);
-        }
+        String rawResponse = chatWithFallback(PITCH_SYSTEM_PROMPT, userPrompt, "pitch-db");
 
         JsonNode json = AiResponseParser.parseJsonFromResponse(rawResponse, objectMapper);
 
@@ -289,6 +279,60 @@ public class AiServiceImpl implements AiService {
         dto.setWebSources(webSourceDTOs);
 
         log.info("Pitch generated with key: {}", dto.getUniqueKey());
+        return dto;
+    }
+
+    @Override
+    public PitchResultDTO generatePitch(PitchGenerateRequestDTO request, String pitchType) {
+        log.info("Generating {} pitch from payload", pitchType);
+
+        requireAtLeastOneAiClient();
+
+        if (request == null || request.getCard() == null) {
+            throw new InvalidRequestException("Card data is required to generate pitch.");
+        }
+
+        BusinessCard card = toBusinessCard(request.getCard());
+        UserProfile userProfile = toUserProfile(request.getUserProfile());
+
+        String userPrompt = buildPitchPrompt(card, userProfile, pitchType);
+        String rawResponse = chatWithFallback(PITCH_SYSTEM_PROMPT, userPrompt, "pitch-payload");
+
+        JsonNode json = AiResponseParser.parseJsonFromResponse(rawResponse, objectMapper);
+
+        PitchResultDTO dto = new PitchResultDTO();
+        dto.setPitchType(pitchType);
+        dto.setGeneratedAt(Instant.now());
+
+        if (json != null) {
+            dto.setText(defaultIfBlank(
+                    AiResponseParser.getStringField(json, "text", "pitch", "pitchText"),
+                    rawResponse));
+            dto.setBriefExplanation(AiResponseParser.getStringField(json, "briefExplanation", "explanation", "brief"));
+            dto.setReasoning(AiResponseParser.getStringField(json, "reasoning", "reason"));
+            dto.setWebInfo(AiResponseParser.getStringField(json, "webInfo", "webContext", "context"));
+            dto.setSource("ai");
+
+            Double gradeValue = AiResponseParser.getNumberField(json, "grade", "score");
+            if (gradeValue != null) {
+                dto.setGrade(BigDecimal.valueOf(gradeValue).setScale(2, RoundingMode.HALF_UP));
+            }
+            dto.setGradeLabel(AiResponseParser.getStringField(json, "gradeLabel", "grade_label", "letterGrade"));
+
+            if (dto.getGradeLabel() == null && dto.getGrade() != null) {
+                dto.setGradeLabel(deriveGradeLabel(dto.getGrade()));
+            }
+
+            dto.setWebSources(extractWebSources(json));
+        } else {
+            dto.setText(defaultIfBlank(rawResponse, "Pitch generation produced no structured output."));
+            dto.setGrade(new BigDecimal("50.00"));
+            dto.setGradeLabel("C");
+            dto.setReasoning("Could not parse structured pitch response.");
+            dto.setSource("ai-fallback");
+            dto.setWebSources(new ArrayList<>());
+        }
+
         return dto;
     }
 
@@ -596,6 +640,84 @@ public class AiServiceImpl implements AiService {
 
     private String defaultIfBlank(String value, String fallback) {
         return (value != null && !value.isBlank()) ? value : fallback;
+    }
+
+    private String chatWithFallback(String systemPrompt, String userPrompt, String stage) {
+        Exception openAiError = null;
+
+        if (openAiClient.isConfigured()) {
+            try {
+                return openAiClient.chat(systemPrompt, userPrompt);
+            } catch (Exception e) {
+                openAiError = e;
+                log.warn("OpenAI {} chat failed, trying Gemini fallback: {}", stage, e.getMessage());
+            }
+        }
+
+        if (geminiClient.isConfigured()) {
+            return geminiClient.chat(systemPrompt + "\n\n" + userPrompt);
+        }
+
+        if (openAiError != null) {
+            throw new InvalidRequestException("OpenAI request failed and Gemini is not configured.");
+        }
+        throw new InvalidRequestException("No AI API keys configured. Set OPENAI_API_KEY and/or GEMINI_API_KEY environment variables.");
+    }
+
+    private List<PitchWebSourceDTO> extractWebSources(JsonNode json) {
+        List<PitchWebSourceDTO> webSourceDTOs = new ArrayList<>();
+        if (json == null) {
+            return webSourceDTOs;
+        }
+
+        JsonNode sourcesNode = json.get("webSources");
+        if (sourcesNode == null) {
+            sourcesNode = json.get("sources");
+        }
+
+        if (sourcesNode != null && sourcesNode.isArray()) {
+            for (JsonNode srcNode : sourcesNode) {
+                String title = srcNode.has("title") ? srcNode.get("title").asText("") : "";
+                String url = srcNode.has("url") ? srcNode.get("url").asText("") : "";
+                if (!title.isBlank() || !url.isBlank()) {
+                    PitchWebSourceDTO wsDto = new PitchWebSourceDTO();
+                    wsDto.setTitle(title);
+                    wsDto.setUrl(url);
+                    webSourceDTOs.add(wsDto);
+                }
+            }
+        }
+
+        return webSourceDTOs;
+    }
+
+    private BusinessCard toBusinessCard(BusinessCardDTO dto) {
+        BusinessCard card = new BusinessCard();
+        if (dto == null) {
+            return card;
+        }
+        card.setName(dto.getName());
+        card.setTitle(dto.getTitle());
+        card.setCompany(dto.getCompany());
+        card.setCategory(dto.getCategory());
+        card.setOrgDescription(dto.getOrgDescription());
+        card.setWebsite(dto.getWebsite());
+        card.setWebContext(dto.getWebContext());
+        return card;
+    }
+
+    private UserProfile toUserProfile(UserProfileDTO dto) {
+        if (dto == null) {
+            return null;
+        }
+        UserProfile profile = new UserProfile();
+        profile.setName(dto.getName());
+        profile.setTitle(dto.getTitle());
+        profile.setCompany(dto.getCompany());
+        profile.setBio(dto.getBio());
+        profile.setProducts(dto.getProducts());
+        profile.setServices(dto.getServices());
+        return profile;
     }
 
     private String deriveGradeLabel(BigDecimal grade) {

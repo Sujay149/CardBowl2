@@ -107,6 +107,7 @@ export async function generatePitchToThem(
 ): Promise<PitchResult> {
   return postJsonWithFallback<PitchResult>(
     [
+      "/business-cards/pitch/to-them",
       `/business-cards/${card.id}/pitch/to-them`,
       "/pitch/to-them",
     ],
@@ -121,6 +122,7 @@ export async function generatePitchFromThem(
 ): Promise<PitchResult> {
   return postJsonWithFallback<PitchResult>(
     [
+      "/business-cards/pitch/from-them",
       `/business-cards/${card.id}/pitch/from-them`,
       "/pitch/from-them",
     ],

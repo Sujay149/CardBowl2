@@ -44,13 +44,26 @@ public class AiResponseParser {
         if (direct != null && direct.isObject()) {
             return direct;
         }
+        if (direct != null && direct.isTextual()) {
+            JsonNode nested = tryParse(direct.asText().trim(), objectMapper);
+            if (nested != null && nested.isObject()) {
+                return nested;
+            }
+        }
 
         // 2. Try extracting from markdown code blocks
         Matcher matcher = CODE_BLOCK_PATTERN.matcher(cleaned);
         while (matcher.find()) {
-            JsonNode parsed = tryParse(matcher.group(1).trim(), objectMapper);
+            String block = matcher.group(1).trim();
+            JsonNode parsed = tryParse(block, objectMapper);
             if (parsed != null && parsed.isObject()) {
                 return parsed;
+            }
+            if (parsed != null && parsed.isTextual()) {
+                JsonNode nested = tryParse(parsed.asText().trim(), objectMapper);
+                if (nested != null && nested.isObject()) {
+                    return nested;
+                }
             }
         }
 
@@ -60,6 +73,12 @@ public class AiResponseParser {
             JsonNode parsed = tryParse(candidate, objectMapper);
             if (parsed != null && parsed.isObject()) {
                 return parsed;
+            }
+            if (parsed != null && parsed.isTextual()) {
+                JsonNode nested = tryParse(parsed.asText().trim(), objectMapper);
+                if (nested != null && nested.isObject()) {
+                    return nested;
+                }
             }
         }
 

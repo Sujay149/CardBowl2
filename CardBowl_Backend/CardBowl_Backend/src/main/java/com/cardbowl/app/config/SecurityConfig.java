@@ -34,11 +34,15 @@ public class SecurityConfig {
                         "/business-cards/ocr",
                         "/business-cards/import-profile",
                         "/business-cards/enrich",
+                        "/business-cards/pitch/to-them",
+                        "/business-cards/pitch/from-them",
                         "/api/auth/**",
                         "/api/public/**",
                         "/api/business-cards/ocr",
                         "/api/business-cards/import-profile",
-                        "/api/business-cards/enrich"
+                        "/api/business-cards/enrich",
+                        "/api/business-cards/pitch/to-them",
+                        "/api/business-cards/pitch/from-them"
                     ).permitAll()
                         .anyRequest().authenticated()
                 )

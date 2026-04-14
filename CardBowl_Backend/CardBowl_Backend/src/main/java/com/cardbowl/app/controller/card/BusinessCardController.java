@@ -8,6 +8,7 @@ import com.cardbowl.app.dto.FilterCriteria;
 import com.cardbowl.app.dto.card.BusinessCardDTO;
 import com.cardbowl.app.dto.card.EnrichRequestDTO;
 import com.cardbowl.app.dto.card.OcrRequestDTO;
+import com.cardbowl.app.dto.card.PitchGenerateRequestDTO;
 import com.cardbowl.app.dto.card.PitchResultDTO;
 import com.cardbowl.app.dto.card.VoiceNoteDTO;
 import com.cardbowl.app.dto.card.view.BusinessCardViewDTO;
@@ -127,9 +128,21 @@ public class BusinessCardController extends BaseController {
         return buildSuccessResponse(HttpStatus.OK, "Pitch generated successfully", result);
     }
 
+    @PostMapping("/pitch/to-them")
+    public ResponseEntity<ApiResponse<Object>> generatePitchToThemFromPayload(@Valid @RequestBody PitchGenerateRequestDTO request) {
+        PitchResultDTO result = aiService.generatePitch(request, "TO_THEM");
+        return buildSuccessResponse(HttpStatus.OK, "Pitch generated successfully", result);
+    }
+
     @PostMapping("/{cardKey}/pitch/from-them")
     public ResponseEntity<ApiResponse<Object>> generatePitchFromThem(@PathVariable String cardKey) {
         PitchResultDTO result = aiService.generatePitch(cardKey, "FROM_THEM");
+        return buildSuccessResponse(HttpStatus.OK, "Pitch generated successfully", result);
+    }
+
+    @PostMapping("/pitch/from-them")
+    public ResponseEntity<ApiResponse<Object>> generatePitchFromThemFromPayload(@Valid @RequestBody PitchGenerateRequestDTO request) {
+        PitchResultDTO result = aiService.generatePitch(request, "FROM_THEM");
         return buildSuccessResponse(HttpStatus.OK, "Pitch generated successfully", result);
     }
 

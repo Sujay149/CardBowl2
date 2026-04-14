@@ -38,9 +38,10 @@ app:
     request:
       connect-timeout-ms: 10000
       read-timeout-ms: 90000
-    openai:
+       openai:
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:gpt-4o}
     gemini:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.5-flash}
+   
