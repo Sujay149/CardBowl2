@@ -25,17 +25,20 @@ export default function CardsScreen() {
   const { cards, loading, refreshCards } = useCards();
   const [search, setSearch] = useState("");
 
+  const asLowerString = (value: unknown) =>
+    typeof value === "string" ? value.toLowerCase() : "";
+
   const filtered = useMemo(() => {
     if (!search.trim()) return cards;
     const q = search.toLowerCase();
     return cards.filter(
       (c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.company?.toLowerCase().includes(q) ||
-        c.title?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.keywords?.some((k) => k.toLowerCase().includes(q)) ||
-        c.category?.toLowerCase().includes(q)
+        asLowerString(c.name).includes(q) ||
+        asLowerString(c.company).includes(q) ||
+        asLowerString(c.title).includes(q) ||
+        asLowerString(c.email).includes(q) ||
+        (Array.isArray(c.keywords) && c.keywords.some((k) => asLowerString(k).includes(q))) ||
+        asLowerString(c.category).includes(q)
     );
   }, [cards, search]);
 

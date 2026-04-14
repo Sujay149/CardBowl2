@@ -182,6 +182,13 @@ export default function ProfileScreen() {
           <Feather name="edit-2" size={16} color="#fff" />
           <Text style={styles.setupBtnText}>Set Up Profile</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.importBtn, { backgroundColor: colors.navy, borderColor: colors.gold + "50" }]}
+          onPress={() => router.push("/import-card")}
+        >
+          <Feather name="credit-card" size={16} color={colors.gold} />
+          <Text style={[styles.importBtnText, { color: colors.gold }]}>Import from Your Card</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -339,6 +346,14 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
+      <TouchableOpacity
+        style={[styles.importBtn, { backgroundColor: colors.navy, borderColor: colors.gold + "50" }]}
+        onPress={() => router.push("/import-card")}
+      >
+        <Feather name="credit-card" size={16} color={colors.gold} />
+        <Text style={[styles.importBtnText, { color: colors.gold }]}>Import from Your Card</Text>
+      </TouchableOpacity>
+
       {profile ? (
         <View
           style={[
@@ -484,6 +499,11 @@ const styles = StyleSheet.create({
   },
   scanConnectText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   shareBtnText: { fontSize: 15, fontWeight: "600" },
+  importBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 10, paddingVertical: 13, borderRadius: 12, borderWidth: 1,
+  },
+  importBtnText: { fontSize: 15, fontWeight: "700" },
   cardPreview: {
     borderRadius: 16,
     padding: 24,

@@ -195,9 +195,9 @@ export default function ScanScreen() {
   const showBanner = (msg: string) => {
     setBannerMsg(msg);
     Animated.sequence([
-      Animated.timing(bannerAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.timing(bannerAnim, { toValue: 1, duration: 250, useNativeDriver: false }),
       Animated.delay(2500),
-      Animated.timing(bannerAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(bannerAnim, { toValue: 0, duration: 300, useNativeDriver: false }),
     ]).start();
   };
 
@@ -281,7 +281,7 @@ export default function ScanScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       quality: 0.7,
     });
     if (!result.canceled && result.assets[0]) {

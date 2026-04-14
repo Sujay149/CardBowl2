@@ -149,6 +149,9 @@ export default function ConnectionsScreen() {
   const { cards } = useCards();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const asLowerTrimmed = (value: unknown) =>
+    typeof value === "string" ? value.trim().toLowerCase() : "";
+
   const [filter, setFilter] = useState<"all" | "company" | "industry" | "keyword">("all");
 
   const groups = useMemo(() => {
@@ -157,8 +160,8 @@ export default function ConnectionsScreen() {
     // Group by company (2+ contacts)
     const companyMap: Record<string, BusinessCard[]> = {};
     cards.forEach((c) => {
-      if (c.company) {
-        const key = c.company.trim().toLowerCase();
+      const key = asLowerTrimmed(c.company);
+      if (key) {
         companyMap[key] = companyMap[key] || [];
         companyMap[key].push(c);
       }
@@ -177,8 +180,8 @@ export default function ConnectionsScreen() {
     // Group by industry/category (2+ contacts)
     const industryMap: Record<string, BusinessCard[]> = {};
     cards.forEach((c) => {
-      if (c.category) {
-        const key = c.category.trim().toLowerCase();
+      const key = asLowerTrimmed(c.category);
+      if (key) {
         industryMap[key] = industryMap[key] || [];
         industryMap[key].push(c);
       }
@@ -197,8 +200,9 @@ export default function ConnectionsScreen() {
     // Group by shared keyword (2+ contacts, top keywords only)
     const kwMap: Record<string, BusinessCard[]> = {};
     cards.forEach((c) => {
-      (c.keywords || []).forEach((kw) => {
-        const key = kw.trim().toLowerCase();
+      (Array.isArray(c.keywords) ? c.keywords : []).forEach((kw) => {
+        const key = asLowerTrimmed(kw);
+        if (!key) return;
         kwMap[key] = kwMap[key] || [];
         if (!kwMap[key].find((x) => x.id === c.id)) kwMap[key].push(c);
       });

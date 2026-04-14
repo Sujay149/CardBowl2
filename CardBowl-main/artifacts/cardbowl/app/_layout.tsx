@@ -27,6 +27,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="card/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="edit/[id]" options={{ presentation: "modal", headerShown: false }} />
+      <Stack.Screen name="import-card" options={{ presentation: "modal", headerShown: false }} />
     </Stack>
   );
 }
