@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "CardBowl"
+version = "1.0.0"
+id = "artifacts/cardbowl"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 18602
+
+[services.development]
+run = "pnpm --filter @workspace/cardbowl run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cardbowl", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/cardbowl", "run", "serve" ]
+
+[services.env]
+PORT = "18602"
+BASE_PATH = "/"

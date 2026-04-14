@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "CardBowl",
+    "slug": "cardbowl",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "cardbowl",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "CardBowl uses the camera to scan business cards.",
+        "NSMicrophoneUsageDescription": "CardBowl uses the microphone to record voice notes.",
+        "NSPhotoLibraryUsageDescription": "CardBowl accesses your photo library to import business card images."
+      }
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CardBowl accesses your photo library to import business card images.",
+          "cameraPermission": "CardBowl uses the camera to scan business cards."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "CardBowl uses the microphone to record voice notes."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": false
+    }
+  }
+}
