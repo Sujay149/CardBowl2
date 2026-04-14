@@ -21,6 +21,6 @@ public class VoiceNoteMapper {
     }
 
     public static void toEntity(VoiceNoteDTO dto, VoiceNote entity) {
-        BeanUtils.copyProperties(dto, entity, "id", "businessCard", "createdDate");
+        BeanUtils.copyProperties(dto, entity, "id", "uniqueKey", "businessCard", "createdDate");
     }
 }

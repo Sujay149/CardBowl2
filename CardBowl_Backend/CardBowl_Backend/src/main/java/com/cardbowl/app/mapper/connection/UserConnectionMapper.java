@@ -27,7 +27,7 @@ public class UserConnectionMapper {
     }
 
     public static void toEntity(UserConnectionDTO dto, UserConnection entity) {
-        BeanUtils.copyProperties(dto, entity, "id", "user", "peerUser", "connectedDate",
-                "userKey", "peerUserKey");
+        BeanUtils.copyProperties(dto, entity, "id", "uniqueKey", "user", "peerUser",
+                "connectedDate", "userKey", "peerUserKey");
     }
 }

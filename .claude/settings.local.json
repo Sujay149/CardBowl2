@@ -7,7 +7,8 @@
       "Read(//c/Program Files/Apache/maven/bin/**)",
       "Bash(ls \"c:\\\\Users\\\\sujay\\\\Downloads\\\\CardBowl-V1\\\\CardBowl_Backend\\\\CardBowl_Backend\\\\mvnw\"*)",
       "Bash(cmd.exe /c \"mvnw.cmd compile\")",
-      "Bash(/c/Users/sujay/.m2/wrapper/dists/apache-maven-3.9.14-bin/*/apache-maven-3.9.14/bin/mvn compile:*)"
+      "Bash(/c/Users/sujay/.m2/wrapper/dists/apache-maven-3.9.14-bin/*/apache-maven-3.9.14/bin/mvn compile:*)",
+      "Bash(./mvnw compile:*)"
     ]
   }
 }

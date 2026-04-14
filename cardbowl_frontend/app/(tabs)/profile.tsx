@@ -19,6 +19,7 @@ import QRCode from "react-native-qrcode-svg";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { UserProfile, generateId } from "@/lib/storage";
 import { useColors } from "@/hooks/useColors";
@@ -380,6 +381,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useProfile();
+  const { signOut, user } = useAuth();
   const [editing, setEditing] = useState(false);
   const [showBack, setShowBack] = useState(false);
   const [form, setForm] = useState<UserProfile | null>(null);
@@ -839,6 +841,32 @@ export default function ProfileScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* Account section */}
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Account</Text>
+        {user?.email ? (
+          <Text style={{ fontSize: 13, color: colors.mutedForeground }}>
+            Signed in as {user.email}
+          </Text>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.signOutBtn, { borderColor: colors.destructive }]}
+          onPress={() =>
+            Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Sign Out",
+                style: "destructive",
+                onPress: signOut,
+              },
+            ])
+          }
+        >
+          <Feather name="log-out" size={16} color={colors.destructive} />
+          <Text style={[styles.signOutText, { color: colors.destructive }]}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -989,4 +1017,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoPreview: { width: "100%", height: 72 },
+  signOutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  signOutText: { fontSize: 15, fontWeight: "600" },
 });

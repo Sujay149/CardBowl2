@@ -31,8 +31,8 @@ public class BusinessCardMapper {
     }
 
     public static void toEntity(BusinessCardDTO dto, BusinessCard entity) {
-        BeanUtils.copyProperties(dto, entity, "id", "user", "connectedUser", "keywords",
-                "decisionMakers", "voiceNotes", "pitchToThem", "pitchFromThem",
+        BeanUtils.copyProperties(dto, entity, "id", "uniqueKey", "user", "connectedUser",
+                "keywords", "decisionMakers", "voiceNotes", "pitchToThem", "pitchFromThem",
                 "savedDate", "userKey", "connectedUserKey",
                 "imageFrontUrl", "imageBackUrl");
         DateTimeMapperUtil.convertToLocalDateTime(dto, entity);

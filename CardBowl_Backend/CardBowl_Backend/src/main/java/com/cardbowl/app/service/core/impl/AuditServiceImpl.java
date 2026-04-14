@@ -2,7 +2,10 @@ package com.cardbowl.app.service.core.impl;
 
 import com.cardbowl.app.common.util.CommonUtil;
 import com.cardbowl.app.model.sql.BaseEntity;
+import com.cardbowl.app.model.sql.auth.UserInfo;
+import com.cardbowl.app.repository.sql.auth.UserInfoRepository;
 import com.cardbowl.app.service.core.AuditService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -14,7 +17,10 @@ import java.time.LocalDateTime;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class AuditServiceImpl implements AuditService {
+
+    private final UserInfoRepository userInfoRepository;
 
     @Override
     public void setAuditFields(BaseEntity entity) {
@@ -23,7 +29,6 @@ public class AuditServiceImpl implements AuditService {
         String coordinates = getCoordinatesFromRequest();
 
         if (entity.getId() == null) {
-            // New entity
             entity.setCreatedBy(currentUserId);
             entity.setUpdatedBy(currentUserId);
             entity.setCreatedOn(now);
@@ -31,7 +36,6 @@ public class AuditServiceImpl implements AuditService {
             entity.setCreatedAt(coordinates);
             entity.setUpdatedAt(coordinates);
         } else {
-            // Existing entity
             entity.setUpdatedBy(currentUserId);
             entity.setUpdatedOn(now);
             entity.setUpdatedAt(coordinates);
@@ -43,9 +47,10 @@ public class AuditServiceImpl implements AuditService {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication != null && authentication.isAuthenticated()
                     && !"anonymousUser".equals(authentication.getPrincipal())) {
-                String username = (String) authentication.getPrincipal();
-                // TODO: Look up user_info by email to get id once UserInfo entity/repository is created
-                return null;
+                String email = (String) authentication.getPrincipal();
+                return userInfoRepository.findByEmail(email)
+                        .map(UserInfo::getId)
+                        .orElse(null);
             }
         } catch (Exception e) {
             log.warn("Could not determine current user for audit: {}", e.getMessage());

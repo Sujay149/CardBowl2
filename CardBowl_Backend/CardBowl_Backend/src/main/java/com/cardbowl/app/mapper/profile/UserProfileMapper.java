@@ -19,8 +19,9 @@ public class UserProfileMapper {
     }
 
     public static void toEntity(UserProfileDTO dto, UserProfile entity) {
-        BeanUtils.copyProperties(dto, entity, "id", "user", "keywords",
-                "companyLogoUrl", "cardImageFrontUrl", "cardImageBackUrl");
+        BeanUtils.copyProperties(dto, entity, "id", "uniqueKey", "user", "keywords",
+                "companyLogoUrl", "cardImageFrontUrl", "cardImageBackUrl",
+                "userKey");
         DateTimeMapperUtil.convertToLocalDateTime(dto, entity);
     }
 }

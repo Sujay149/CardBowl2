@@ -16,7 +16,7 @@ public class LookupMapper {
     }
 
     public static void toEntity(LookupDTO dto, Lookup entity) {
-        BeanUtils.copyProperties(dto, entity, "id");
+        BeanUtils.copyProperties(dto, entity, "id", "uniqueKey");
         DateTimeMapperUtil.convertToLocalDateTime(dto, entity);
     }
 }
