@@ -263,7 +263,7 @@ export default function ScanScreen() {
       Alert.alert("Permission required", "Please allow camera access");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.4 });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;
       if (side === "front") {
@@ -282,7 +282,7 @@ export default function ScanScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.7,
+      quality: 0.4,
     });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;

@@ -1,8 +1,10 @@
 import * as FileSystem from "expo-file-system";
+import Constants from "expo-constants";
 import { UserProfile } from "./storage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "";
 const EXTRACTION_TIMEOUT_MS = 30000;
 
 export interface ExtractedProfile {
@@ -82,18 +84,146 @@ async function imageToBase64(uri: string): Promise<{ base64: string; mimeType: s
   return { base64, mimeType };
 }
 
-export function checkApiKeys(): { openai: boolean; gemini: boolean; message?: string } {
+export function checkApiKeys(): {
+  openai: boolean;
+  gemini: boolean;
+  backend: boolean;
+  message?: string;
+} {
   const hasOpenAI = !!OPENAI_API_KEY && OPENAI_API_KEY !== "your_openai_api_key_here";
   const hasGemini = !!GEMINI_API_KEY && GEMINI_API_KEY !== "your_gemini_api_key_here";
+  const hasBackendApi = !!API_BASE_URL.trim();
 
-  if (!hasOpenAI && !hasGemini) {
+  if (!hasOpenAI && !hasGemini && !hasBackendApi) {
     return {
       openai: false,
       gemini: false,
-      message: "No API keys found. Add EXPO_PUBLIC_OPENAI_API_KEY and/or EXPO_PUBLIC_GEMINI_API_KEY to your .env file, then restart the Expo dev server.",
+      backend: false,
+      message:
+        "No AI configuration found. Add EXPO_PUBLIC_API_BASE_URL for backend processing, or set EXPO_PUBLIC_OPENAI_API_KEY / EXPO_PUBLIC_GEMINI_API_KEY for direct client processing.",
     };
   }
-  return { openai: hasOpenAI, gemini: hasGemini };
+
+  if (!hasOpenAI && !hasGemini && hasBackendApi) {
+    return {
+      openai: false,
+      gemini: false,
+      backend: true,
+      message: "Using backend AI processing via EXPO_PUBLIC_API_BASE_URL.",
+    };
+  }
+
+  return { openai: hasOpenAI, gemini: hasGemini, backend: hasBackendApi };
+}
+
+function normalizeBackendBases(): string[] {
+  const raw = API_BASE_URL.trim();
+  if (!raw) return [];
+
+  const noSlash = raw.replace(/\/$/, "");
+  const baseOnly = noSlash.toLowerCase().endsWith("/api")
+    ? [noSlash.slice(0, -4)]
+    : [noSlash];
+
+  const expoHostUri = Constants.expoConfig?.hostUri || "";
+  const expoHost = expoHostUri.split(":")[0]?.trim();
+  const match = noSlash.match(/^https?:\/\/([^/:]+)(:\d+)?(\/api)?$/i);
+  const protocol = noSlash.startsWith("https://") ? "https" : "http";
+  const port = match?.[2] || ":8080";
+  const path = "";
+
+  const hostCandidates = [match?.[1], expoHost, "10.0.2.2", "localhost", "127.0.0.1"]
+    .filter((h): h is string => !!h && h.length > 0)
+    .filter((h, idx, arr) => arr.indexOf(h) === idx);
+
+  const expanded = hostCandidates.map((host) => `${protocol}://${host}${port}${path}`);
+  const all = [...baseOnly, ...expanded];
+
+  return all.filter((value, idx, arr) => arr.indexOf(value) === idx);
+}
+
+function mapBackendProfileToExtracted(payload: any): ExtractedProfile {
+  if (!payload || typeof payload !== "object") return {};
+  return {
+    name: payload.name,
+    title: payload.title,
+    company: payload.company,
+    email: payload.email,
+    phone: payload.phone,
+    website: payload.website,
+    address: payload.address,
+    linkedin: payload.linkedin,
+    twitter: payload.twitter,
+    bio: payload.bio,
+    products: payload.products,
+    services: payload.services,
+    keywords: Array.isArray(payload.keywords) ? payload.keywords : [],
+  };
+}
+
+async function extractViaBackend(frontUri: string, backUri?: string): Promise<ExtractedProfile> {
+  const bases = normalizeBackendBases();
+  if (bases.length === 0) {
+    throw new Error("Backend API base URL is not configured.");
+  }
+  console.log(`[AI] Backend base candidates: ${bases.join(", ")}`);
+
+  const front = await imageToBase64(frontUri);
+  const back = backUri ? await imageToBase64(backUri) : null;
+  const mimeType = front.mimeType || back?.mimeType || "image/jpeg";
+
+  const body = {
+    frontImageData: front.base64,
+    backImageData: back?.base64,
+    mimeType,
+  };
+
+  const frontKb = Math.round((front.base64.length * 3) / 4 / 1024);
+  const backKb = back ? Math.round((back.base64.length * 3) / 4 / 1024) : 0;
+  console.log(`[AI] Backend profile extraction started. front=${frontKb}KB back=${backKb}KB`);
+
+  let lastError = "";
+  let shouldStopRetrying = false;
+  for (const base of bases) {
+    const url = `${base}/business-cards/import-profile`;
+    try {
+      const startedAt = Date.now();
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        const msg = json?.message || `Backend request failed (${response.status})`;
+        console.log(`[AI] Backend profile extraction failed at ${url} after ${Date.now() - startedAt}ms: ${msg}`);
+        if (response.status === 404) {
+          lastError = msg;
+          continue;
+        }
+        shouldStopRetrying = true;
+        throw new Error(msg);
+      }
+
+      const data = json?.data ?? json;
+      const mapped = mapBackendProfileToExtracted(data);
+      if (hasMeaningfulData(mapped)) {
+        console.log(`[AI] Backend profile extraction succeeded at ${url} in ${Date.now() - startedAt}ms`);
+        return mapped;
+      }
+      lastError = "Backend returned empty extraction data.";
+      console.log(`[AI] Backend profile extraction empty result at ${url} after ${Date.now() - startedAt}ms`);
+    } catch (err: any) {
+      console.log(`[AI] Backend profile extraction error at ${url}: ${err?.message || "unknown error"}`);
+      lastError = err?.message || "Backend request failed.";
+      if (shouldStopRetrying) {
+        break;
+      }
+    }
+  }
+
+  throw new Error(lastError || "Backend extraction failed.");
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -410,15 +540,16 @@ export async function extractProfileFromCard(
   backUri?: string,
   onStatus?: (msg: string) => void,
 ): Promise<ExtractedProfile> {
+  const keys = checkApiKeys();
+  if (!keys.openai && !keys.gemini) {
+    onStatus?.("Using backend AI extraction...");
+    return extractViaBackend(frontUri, backUri);
+  }
+
   const extractFromOneSide = async (
     uri: string,
     onStatus?: (msg: string) => void,
   ): Promise<ExtractedProfile> => {
-    const keys = checkApiKeys();
-    if (!keys.openai && !keys.gemini) {
-      throw new Error(keys.message || "No API keys configured.");
-    }
-
     let openaiData: ExtractedProfile = {};
     let geminiData: ExtractedProfile & { qrContent?: string } = {};
     let openaiError: any;

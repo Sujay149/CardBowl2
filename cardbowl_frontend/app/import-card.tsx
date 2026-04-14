@@ -92,7 +92,7 @@ export default function ImportCardScreen() {
       Alert.alert("Permission required", "Please allow camera access");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.4 });
     if (!result.canceled && result.assets[0]) {
       if (side === "front") {
         setImageFront(result.assets[0].uri);
@@ -110,7 +110,7 @@ export default function ImportCardScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.7,
+      quality: 0.4,
     });
     if (!result.canceled && result.assets[0]) {
       if (side === "front") {
@@ -131,10 +131,10 @@ export default function ImportCardScreen() {
 
     // Validate API keys before starting
     const keys = checkApiKeys();
-    if (!keys.openai && !keys.gemini) {
+    if (!keys.openai && !keys.gemini && !keys.backend) {
       Alert.alert(
         "API Keys Missing",
-        keys.message || "Add your OpenAI or Gemini API key to .env and restart the Expo dev server (npx expo start).",
+        keys.message || "Add EXPO_PUBLIC_API_BASE_URL (backend mode) or OpenAI/Gemini keys to .env, then restart the Expo dev server (npx expo start).",
       );
       return;
     }
