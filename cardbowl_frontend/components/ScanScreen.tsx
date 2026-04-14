@@ -309,11 +309,17 @@ export default function ScanScreen() {
         setOcrFields(touched);
         showBanner(`Card scanned — ${touched.size} field${touched.size !== 1 ? "s" : ""} filled in`);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStep("details");
       } catch {
-        showBanner("OCR unavailable — fill in details manually");
+        Alert.alert(
+          "Backend unavailable",
+          "Card scan requires backend OCR. Start backend and try again."
+        );
+        return;
       } finally {
         setOcrRunning(false);
       }
+      return;
     }
     setStep("details");
   };
