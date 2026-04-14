@@ -47,6 +47,14 @@ export default function ImportCardScreen() {
   const [cameraSide, setCameraSide] = useState<"front" | "back">("front");
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
 
+  const goBackOrProfile = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)/profile");
+  };
+
   const startPulse = () => {
     Animated.loop(
       Animated.sequence([
@@ -210,7 +218,7 @@ export default function ImportCardScreen() {
         <View
           style={[styles.navBar, { paddingTop: topPad + 10, backgroundColor: colors.background, borderBottomColor: colors.border }]}
         >
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={goBackOrProfile}>
             <Feather name="arrow-left" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.navTitle, { color: colors.foreground }]}>Import from Your Card</Text>

@@ -5,6 +5,7 @@ export interface UserProfile {
   name: string;
   title: string;
   company: string;
+  companyLogo?: string;
   email: string;
   phone: string;
   website: string;
