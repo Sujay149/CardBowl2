@@ -204,6 +204,40 @@ export default function ScanScreen() {
   const set = (field: keyof typeof form) => (value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
+  const getCurrentScanLocation = async (): Promise<BusinessCard["location"] | undefined> => {
+    if (!locationPermission) return undefined;
+
+    try {
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,
+      });
+
+      let locationAddress = "";
+      try {
+        const [rev] = await Location.reverseGeocodeAsync({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+        if (rev) {
+          locationAddress = [rev.city, rev.region, rev.country]
+            .filter(Boolean)
+            .join(", ");
+        }
+      } catch {
+        // Best-effort address lookup; coordinates are still useful.
+      }
+
+      return {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        address: locationAddress,
+      };
+    } catch {
+      return undefined;
+    }
+  };
+
   const mergeExtractedFields = (extracted: Partial<BusinessCard>, touched: Set<string>) => {
     setForm((prev) => {
       const next = { ...prev };
@@ -350,31 +384,7 @@ export default function ScanScreen() {
     }
     setSaving(true);
     try {
-      let locationData: BusinessCard["location"] | undefined;
-      if (locationPermission) {
-        try {
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 5000,
-          });
-          let locationAddress = "";
-          try {
-            const [rev] = await Location.reverseGeocodeAsync({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-            });
-            if (rev) {
-              locationAddress = [rev.city, rev.region, rev.country]
-                .filter(Boolean).join(", ");
-            }
-          } catch {}
-          locationData = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            address: locationAddress,
-          };
-        } catch {}
-      }
+      const locationData = await getCurrentScanLocation();
 
       const card: BusinessCard = {
         id: generateId(),
@@ -473,8 +483,13 @@ export default function ScanScreen() {
     }
 
     try {
+      const locationData = await getCurrentScanLocation();
       const connectedCard = profilePayloadToBusinessCard(payload);
-      await addOrUpdateCard(connectedCard);
+      await addOrUpdateCard({
+        ...connectedCard,
+        location: locationData,
+        updatedAt: new Date().toISOString(),
+      });
 
       if (profile?.id) {
         const now = new Date().toISOString();

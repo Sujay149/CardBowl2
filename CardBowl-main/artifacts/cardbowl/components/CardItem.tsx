@@ -68,6 +68,17 @@ export function CardItem({ card, onPress }: CardItemProps) {
             {card.company}
           </Text>
         ) : null}
+        {card.location?.address ? (
+          <View style={styles.locationRow}>
+            <Feather name="map-pin" size={10} color={colors.success} />
+            <Text
+              style={[styles.locationText, { color: colors.mutedForeground }]}
+              numberOfLines={1}
+            >
+              {card.location.address}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <View style={styles.meta}>
         {card.voiceNotes.length > 0 && (
@@ -114,6 +125,8 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: "600" },
   title: { fontSize: 12 },
   company: { fontSize: 13, fontWeight: "500" },
+  locationRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  locationText: { fontSize: 11 },
   meta: { alignItems: "center", gap: 6 },
   badge: {
     flexDirection: "row",
