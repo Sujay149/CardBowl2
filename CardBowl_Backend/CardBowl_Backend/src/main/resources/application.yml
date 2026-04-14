@@ -44,9 +44,4 @@ app:
     gemini:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.5-flash}
-    # openai:
-    #   api-key: REMOVED_API_KEYTTBB5ZuBntrIgVLlt8ewG-aQh9YLKm78nb39gIWwXUfTTaVps6lXZ_rCQkYKEgBbgrytMw9xFQT3BlbkFJkc83OWivfv-9PhxeYti0gwN4JtDJ3R_JLqFl8Wd0B0-hx_7A48L7JNQ1QI4Vdy4z_-7BF_LLIA
-    #   model: gpt-4o
-    # gemini:
-    #   api-key: AIzaSyBkqaP7gpc7gfr-4TZapS93e_nKUok-HzE
-    #   model: gemini-2.5-flash
+ 
