@@ -14,6 +14,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Service
 @Slf4j
@@ -48,7 +49,8 @@ public class AuditServiceImpl implements AuditService {
             if (authentication != null && authentication.isAuthenticated()
                     && !"anonymousUser".equals(authentication.getPrincipal())) {
                 String email = (String) authentication.getPrincipal();
-                return userInfoRepository.findByEmail(email)
+                String normalizedEmail = email == null ? null : email.trim().toLowerCase(Locale.ROOT);
+                return userInfoRepository.findByEmailIgnoreCase(normalizedEmail)
                         .map(UserInfo::getId)
                         .orElse(null);
             }

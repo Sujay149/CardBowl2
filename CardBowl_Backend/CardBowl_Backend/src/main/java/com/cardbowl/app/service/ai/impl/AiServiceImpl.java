@@ -642,12 +642,20 @@ public class AiServiceImpl implements AiService {
         return (value != null && !value.isBlank()) ? value : fallback;
     }
 
+    private boolean isUsableModelResponse(String response) {
+        return response != null && !response.isBlank();
+    }
+
     private String chatWithFallback(String systemPrompt, String userPrompt, String stage) {
         Exception openAiError = null;
 
         if (openAiClient.isConfigured()) {
             try {
-                return openAiClient.chat(systemPrompt, userPrompt);
+                String openAiResponse = openAiClient.chat(systemPrompt, userPrompt);
+                if (isUsableModelResponse(openAiResponse)) {
+                    return openAiResponse;
+                }
+                log.warn("OpenAI {} chat returned empty response, trying Gemini fallback", stage);
             } catch (Exception e) {
                 openAiError = e;
                 log.warn("OpenAI {} chat failed, trying Gemini fallback: {}", stage, e.getMessage());
@@ -655,7 +663,15 @@ public class AiServiceImpl implements AiService {
         }
 
         if (geminiClient.isConfigured()) {
-            return geminiClient.chat(systemPrompt + "\n\n" + userPrompt);
+            try {
+                return geminiClient.chat(systemPrompt + "\n\n" + userPrompt);
+            } catch (Exception e) {
+                if (openAiError != null) {
+                    log.warn("Gemini {} chat also failed after OpenAI failure: {}", stage, e.getMessage());
+                    throw new InvalidRequestException("Both OpenAI and Gemini requests failed. Check backend terminal logs for details.");
+                }
+                throw e;
+            }
         }
 
         if (openAiError != null) {

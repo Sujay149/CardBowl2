@@ -11,7 +11,14 @@ import {
   saveCard,
   deleteCard,
 } from "@/lib/storage";
-import { pushCardToBackend, syncCardsFromBackend, isOnline } from "@/lib/sync";
+import {
+  fullSync,
+  pullCards,
+  pushCard,
+  canReachBackend,
+  isBackendKey,
+} from "@/lib/sync";
+import { enqueue } from "@/lib/offlineQueue";
 import { useAuth } from "@/context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -36,34 +43,31 @@ export function CardsProvider({ children }: { children: React.ReactNode }) {
   const refreshCards = useCallback(async () => {
     setLoading(true);
     try {
-      // Load from local storage first (fast)
+      // 1. Hydrate from local cache instantly
       const local = await getAllCards();
       setCards(local);
 
-      // Then sync from backend if authenticated
-      const online = await isOnline();
+      // 2. Background sync from backend
+      const online = await canReachBackend();
       if (online) {
         setSyncing(true);
         try {
-          const backendCards = await syncCardsFromBackend();
-          if (backendCards.length > 0) {
-            // Merge: backend is source of truth, keep local-only cards
+          const serverCards = await pullCards();
+          if (serverCards.length > 0) {
+            // Merge: server wins for backend-keyed items, keep local-only
             const localOnlyCards = local.filter(
               (lc) =>
-                lc.id.length !== 15 &&
-                !backendCards.some(
-                  (bc) => bc.name === lc.name && bc.email === lc.email
+                !isBackendKey(lc.id) &&
+                !serverCards.some(
+                  (sc) => sc.name === lc.name && sc.email === lc.email && sc.name !== ""
                 )
             );
-            const merged = [...backendCards, ...localOnlyCards];
+            const merged = [...serverCards, ...localOnlyCards];
             setCards(merged);
-            await AsyncStorage.setItem(
-              "cardbowl_cards",
-              JSON.stringify(merged)
-            );
+            await AsyncStorage.setItem("cardbowl_cards", JSON.stringify(merged));
           }
         } catch (err) {
-          console.warn("Background card sync failed:", err);
+          console.warn("[Cards] Background sync failed:", err);
         } finally {
           setSyncing(false);
         }
@@ -73,14 +77,12 @@ export function CardsProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Re-sync whenever auth state changes (login/logout)
+  // Re-sync when auth changes
   useEffect(() => {
     if (authLoading) return;
-
     if (isAuthenticated) {
       refreshCards();
     } else {
-      // Logged out — clear local state
       setCards([]);
       setLoading(false);
     }
@@ -88,22 +90,32 @@ export function CardsProvider({ children }: { children: React.ReactNode }) {
 
   const addOrUpdateCard = useCallback(
     async (card: BusinessCard) => {
-      // Save locally first
+      // 1. Save locally first (instant UI update)
       await saveCard(card);
 
-      // Push to backend if online
-      const online = await isOnline();
+      // 2. Try to push to backend
+      const online = await canReachBackend();
       if (online) {
         try {
-          const synced = await pushCardToBackend(card);
+          const synced = await pushCard(card);
           if (synced.id !== card.id) {
-            // Backend assigned a new key — update local storage
             await deleteCard(card.id);
             await saveCard(synced);
           }
         } catch (err) {
-          console.warn("Card push to backend failed:", err);
+          // Push failed — queue for later
+          console.warn("[Cards] Push failed, queuing:", err);
+          await enqueue(
+            isBackendKey(card.id) ? "card_update" : "card_create",
+            card
+          );
         }
+      } else {
+        // Offline — queue the action
+        await enqueue(
+          isBackendKey(card.id) ? "card_update" : "card_create",
+          card
+        );
       }
 
       await refreshCards();
@@ -113,16 +125,22 @@ export function CardsProvider({ children }: { children: React.ReactNode }) {
 
   const removeCard = useCallback(
     async (id: string) => {
+      // 1. Delete locally first
       await deleteCard(id);
 
-      // Deactivate on backend if it's a backend card (15-char uniqueKey)
-      const online = await isOnline();
-      if (online && id.length === 15) {
-        try {
-          const { apiPut } = await import("@/lib/api");
-          await apiPut(`/business-cards/${id}/deactivate`);
-        } catch (err) {
-          console.warn("Card deactivate on backend failed:", err);
+      // 2. Deactivate on backend or queue
+      if (isBackendKey(id)) {
+        const online = await canReachBackend();
+        if (online) {
+          try {
+            const { apiPut } = await import("@/lib/api");
+            await apiPut(`/business-cards/${id}/deactivate`);
+          } catch (err) {
+            console.warn("[Cards] Deactivate failed, queuing:", err);
+            await enqueue("card_delete", { id });
+          }
+        } else {
+          await enqueue("card_delete", { id });
         }
       }
 

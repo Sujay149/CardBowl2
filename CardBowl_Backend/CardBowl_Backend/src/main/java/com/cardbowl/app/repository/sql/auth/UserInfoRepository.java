@@ -13,4 +13,8 @@ public interface UserInfoRepository extends BaseUniqueKeyRepository<UserInfo>, J
     Optional<UserInfo> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    Optional<UserInfo> findByEmailIgnoreCase(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
 }

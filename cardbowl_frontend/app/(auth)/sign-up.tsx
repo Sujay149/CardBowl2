@@ -3,7 +3,6 @@ import { Link } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -40,6 +39,7 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [apiError, setApiError] = useState<string | null>(null);
 
   function validate(): boolean {
     const newErrors: FormErrors = {};
@@ -78,6 +78,7 @@ export default function SignUpScreen() {
   async function handleSignUp() {
     if (!validate()) return;
 
+    setApiError(null);
     setLoading(true);
     try {
       await signUp({
@@ -88,8 +89,8 @@ export default function SignUpScreen() {
         mobileNo: mobileNo.trim() || undefined,
       });
     } catch (err: any) {
-      const message = err?.message || "Sign up failed. Please try again.";
-      Alert.alert("Sign Up Failed", message);
+      const msg = err?.message || "Sign up failed. Please check your connection and try again.";
+      setApiError(msg);
     } finally {
       setLoading(false);
     }
@@ -200,6 +201,19 @@ export default function SignUpScreen() {
           <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
             Start managing your business cards smartly
           </Text>
+
+          {/* API Error Banner */}
+          {apiError && (
+            <View style={[styles.errorBanner, { backgroundColor: colors.destructive + "15", borderColor: colors.destructive + "40" }]}>
+              <Feather name="alert-circle" size={16} color={colors.destructive} />
+              <Text style={[styles.errorBannerText, { color: colors.destructive }]}>
+                {apiError}
+              </Text>
+              <Pressable onPress={() => setApiError(null)} hitSlop={8}>
+                <Feather name="x" size={16} color={colors.destructive} />
+              </Pressable>
+            </View>
+          )}
 
           {/* Name row */}
           <View style={styles.nameRow}>
@@ -331,6 +345,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    lineHeight: 18,
   },
   appName: {
     fontSize: 24,

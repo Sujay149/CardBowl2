@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
 import {
   AuthUser,
@@ -14,6 +15,7 @@ import {
   getAccessToken,
   clearAuth,
 } from "@/lib/api";
+import { fullSync } from "@/lib/sync";
 
 interface AuthState {
   user: AuthUser | null;
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
     isLoading: true,
   });
+  const syncRan = useRef(false);
 
   // Restore session on mount
   useEffect(() => {
@@ -61,6 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const user = await getStoredUser();
         if (token && user) {
           setState({ user, isAuthenticated: true, isLoading: false });
+
+          // Background sync on app start (non-blocking)
+          if (!syncRan.current) {
+            syncRan.current = true;
+            fullSync().catch((err) =>
+              console.warn("[Auth] Background sync on restore failed:", err)
+            );
+          }
         } else {
           setState({ user: null, isAuthenticated: false, isLoading: false });
         }
@@ -86,6 +97,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await saveTokens({ token: data.token, refreshToken: data.refreshToken });
     await saveUser(user);
     setState({ user, isAuthenticated: true, isLoading: false });
+
+    // Sync after login (non-blocking)
+    fullSync().catch((err) =>
+      console.warn("[Auth] Post-login sync failed:", err)
+    );
   }, []);
 
   const signUp = useCallback(async (signUpData: SignUpData) => {
@@ -104,14 +120,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await clearAuth();
+    console.log("[Auth] signOut");
+    try {
+      await clearAuth();
+    } catch (err) {
+      console.warn("[Auth] clearAuth error:", err);
+    }
+    syncRan.current = false;
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{ ...state, signIn, signUp, signOut }}
-    >
+    <AuthContext.Provider value={{ ...state, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,22 +1,9 @@
 import { Redirect } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
 
-import { useAuth } from "@/context/AuthContext";
-
+// The route guard in _layout.tsx handles auth-based routing.
+// This file just handles the initial "/" path by redirecting to tabs.
+// If the user isn't authenticated, the route guard will intercept and
+// redirect to sign-in before tabs renders.
 export default function Index() {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Redirect href="/(auth)/sign-in" />;
-  }
-
   return <Redirect href="/(tabs)" />;
 }

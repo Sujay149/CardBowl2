@@ -4,6 +4,7 @@ import com.cardbowl.app.dto.auth.AuthResponseDTO;
 import com.cardbowl.app.dto.auth.LoginRequestDTO;
 import com.cardbowl.app.dto.auth.RefreshTokenRequestDTO;
 import com.cardbowl.app.dto.auth.RegisterRequestDTO;
+import com.cardbowl.app.dto.auth.ResetPasswordRequestDTO;
 import com.cardbowl.app.model.sql.auth.UserInfo;
 
 public interface AuthService {
@@ -13,6 +14,8 @@ public interface AuthService {
     AuthResponseDTO login(LoginRequestDTO request);
 
     AuthResponseDTO refreshToken(RefreshTokenRequestDTO request);
+
+    AuthResponseDTO resetPassword(ResetPasswordRequestDTO request);
 
     UserInfo getCurrentUser();
 

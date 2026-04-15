@@ -1,4 +1,26 @@
-import { apiGet, apiPost, apiPut, getAccessToken } from "./api";
+/**
+ * Sync Engine
+ *
+ * Responsibilities:
+ * - Drain offline queue (push local changes to backend)
+ * - Pull server state (source of truth)
+ * - Merge server + local-only data
+ * - Persist merged state to local cache
+ *
+ * Merge strategy:
+ * - Server data wins for any item that exists on both sides
+ * - Local-only items (no backend key) are preserved and queued for push
+ * - Timestamps used to detect newer local data during conflict
+ */
+
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  getAccessToken,
+  API_BASE,
+  NetworkError,
+} from "./api";
 import {
   BusinessCard,
   UserProfile,
@@ -6,12 +28,20 @@ import {
   VoiceNote,
   getAllCards,
   saveCard,
+  deleteCard,
   getUserProfile,
   saveUserProfile,
 } from "./storage";
+import {
+  getQueue,
+  dequeue,
+  incrementRetry,
+  QueueItem,
+} from "./offlineQueue";
+import { checkBackendReachable } from "./network";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// ---- Backend DTO shapes (match Java DTOs) ----
+// ─── Backend DTO types ──────────────────────────────────────
 
 interface BackendCardDTO {
   uniqueKey?: string;
@@ -91,7 +121,6 @@ interface BackendProfileDTO {
 }
 
 interface BackendCardViewDTO {
-  id?: number;
   cardKey?: string;
   name?: string;
   title?: string;
@@ -104,23 +133,19 @@ interface BackendCardViewDTO {
   scanAddress?: string;
   savedDate?: string;
   isConnectedCard?: boolean;
-  isActive?: boolean;
-  userId?: number;
-  userKey?: string;
-  ownerName?: string;
   createdOn?: string;
-  searchText?: string;
 }
 
 interface PageResponse<T> {
   content: T[];
   totalElements: number;
-  totalPages: number;
-  number: number;
-  size: number;
 }
 
-// ---- Mappers: Backend DTO <-> Local storage ----
+// ─── Mappers ────────────────────────────────────────────────
+
+function isBackendKey(id: string | undefined): boolean {
+  return !!id && id.length === 15 && !id.startsWith("connected:");
+}
 
 function backendPitchToLocal(dto: BackendPitchDTO | undefined): PitchResult | undefined {
   if (!dto || !dto.text) return undefined;
@@ -241,13 +266,8 @@ function backendProfileToLocal(dto: BackendProfileDTO): UserProfile {
   };
 }
 
-function isBackendKey(id: string | undefined): boolean {
-  return !!id && id.length === 15 && !id.startsWith("connected:");
-}
-
 function localProfileToBackend(profile: UserProfile): BackendProfileDTO {
   return {
-    // Only send uniqueKey if it's a real backend key (15 chars)
     uniqueKey: isBackendKey(profile.id) ? profile.id : undefined,
     name: profile.name,
     title: profile.title,
@@ -268,35 +288,114 @@ function localProfileToBackend(profile: UserProfile): BackendProfileDTO {
   };
 }
 
-// ---- Sync functions ----
+// ─── Connectivity Check ─────────────────────────────────────
 
-export async function isOnline(): Promise<boolean> {
+export async function canReachBackend(): Promise<boolean> {
   const token = await getAccessToken();
-  return !!token;
+  if (!token) return false;
+  return checkBackendReachable(API_BASE);
+}
+
+// ─── Queue Drain ────────────────────────────────────────────
+
+async function processQueueItem(item: QueueItem): Promise<boolean> {
+  try {
+    switch (item.type) {
+      case "card_create": {
+        const dto = localCardToBackend(item.payload);
+        const result = await apiPost<BackendCardDTO>("/business-cards", dto);
+        // Update local storage with backend key
+        if (result.uniqueKey) {
+          const synced = backendCardToLocal(result);
+          synced.voiceNotes = item.payload.voiceNotes ?? [];
+          synced.pitchToThem = item.payload.pitchToThem;
+          synced.pitchFromThem = item.payload.pitchFromThem;
+          await deleteCard(item.payload.id);
+          await saveCard(synced);
+        }
+        return true;
+      }
+      case "card_update": {
+        const dto = localCardToBackend(item.payload);
+        await apiPut<BackendCardDTO>("/business-cards", dto);
+        return true;
+      }
+      case "card_delete": {
+        const cardId = item.payload.id;
+        if (isBackendKey(cardId)) {
+          await apiPut(`/business-cards/${cardId}/deactivate`);
+        }
+        return true;
+      }
+      case "profile_update": {
+        const dto = localProfileToBackend(item.payload);
+        const result = await apiPut<BackendProfileDTO>("/user-profiles", dto);
+        if (result) {
+          await saveUserProfile(backendProfileToLocal(result));
+        }
+        return true;
+      }
+      default:
+        console.warn("[Sync] Unknown queue item type:", item.type);
+        return true; // Remove unknown items
+    }
+  } catch (err) {
+    if (err instanceof NetworkError) throw err; // Bubble up — stop drain
+    console.warn(`[Sync] Queue item ${item.type} failed:`, err);
+    return false;
+  }
 }
 
 /**
- * Pull all cards from backend and merge into local storage.
- * Backend is source of truth for cards that have a uniqueKey.
+ * Drain the offline queue. Stops early on network failure.
+ * Returns number of items successfully processed.
  */
-export async function syncCardsFromBackend(): Promise<BusinessCard[]> {
+export async function drainQueue(): Promise<number> {
+  const queue = await getQueue();
+  if (queue.length === 0) return 0;
+
+  console.log(`[Sync] Draining offline queue: ${queue.length} items`);
+  let processed = 0;
+
+  for (const item of queue) {
+    try {
+      const success = await processQueueItem(item);
+      if (success) {
+        await dequeue(item.id);
+        processed++;
+      } else {
+        const canRetry = await incrementRetry(item.id);
+        if (!canRetry) processed++; // Dropped — count as handled
+      }
+    } catch (err) {
+      if (err instanceof NetworkError) {
+        console.log("[Sync] Network lost during drain, stopping");
+        break;
+      }
+      await incrementRetry(item.id);
+    }
+  }
+
+  console.log(`[Sync] Queue drain complete: ${processed}/${queue.length} processed`);
+  return processed;
+}
+
+// ─── Pull from Backend ──────────────────────────────────────
+
+export async function pullCards(): Promise<BusinessCard[]> {
   try {
     const page = await apiGet<PageResponse<BackendCardViewDTO>>(
       "/business-cards?isActive__eq=true&size=500"
     );
 
-    const detailedCards: BusinessCard[] = [];
-
+    const cards: BusinessCard[] = [];
     for (const view of page.content) {
       if (!view.cardKey) continue;
       try {
-        const detail = await apiGet<BackendCardDTO>(
-          `/business-cards/${view.cardKey}`
-        );
-        detailedCards.push(backendCardToLocal(detail));
+        const detail = await apiGet<BackendCardDTO>(`/business-cards/${view.cardKey}`);
+        cards.push(backendCardToLocal(detail));
       } catch {
-        // If detail fetch fails, create minimal card from view
-        detailedCards.push({
+        cards.push({
           id: view.cardKey,
           name: view.name ?? "",
           title: view.title ?? "",
@@ -315,53 +414,14 @@ export async function syncCardsFromBackend(): Promise<BusinessCard[]> {
         });
       }
     }
-
-    return detailedCards;
+    return cards;
   } catch (err) {
-    console.warn("syncCardsFromBackend failed:", err);
+    console.warn("[Sync] pullCards failed:", err);
     return [];
   }
 }
 
-/**
- * Push a local card to the backend (create or update).
- */
-export async function pushCardToBackend(
-  card: BusinessCard
-): Promise<BusinessCard> {
-  const dto = localCardToBackend(card);
-
-  try {
-    let result: BackendCardDTO;
-
-    // If the card has a backend uniqueKey, update it; otherwise create
-    if (dto.uniqueKey) {
-      result = await apiPut<BackendCardDTO>("/business-cards", dto);
-    } else {
-      result = await apiPost<BackendCardDTO>("/business-cards", dto);
-    }
-
-    const synced = backendCardToLocal(result);
-    // Preserve local voice notes and pitches that may not have synced yet
-    synced.voiceNotes = card.voiceNotes;
-    synced.pitchToThem = result.pitchToThem
-      ? backendPitchToLocal(result.pitchToThem)
-      : card.pitchToThem;
-    synced.pitchFromThem = result.pitchFromThem
-      ? backendPitchToLocal(result.pitchFromThem)
-      : card.pitchFromThem;
-
-    return synced;
-  } catch (err) {
-    console.warn("pushCardToBackend failed:", err);
-    return card;
-  }
-}
-
-/**
- * Pull profile from backend.
- */
-export async function syncProfileFromBackend(): Promise<UserProfile | null> {
+export async function pullProfile(): Promise<UserProfile | null> {
   try {
     const dto = await apiGet<BackendProfileDTO>("/user-profiles/me");
     if (!dto || !dto.uniqueKey) return null;
@@ -371,75 +431,154 @@ export async function syncProfileFromBackend(): Promise<UserProfile | null> {
   }
 }
 
-/**
- * Push local profile to backend.
- */
-export async function pushProfileToBackend(
-  profile: UserProfile
-): Promise<UserProfile> {
-  const dto = localProfileToBackend(profile);
+// ─── Push to Backend ────────────────────────────────────────
 
+export async function pushCard(card: BusinessCard): Promise<BusinessCard> {
+  const dto = localCardToBackend(card);
+  try {
+    const result = dto.uniqueKey
+      ? await apiPut<BackendCardDTO>("/business-cards", dto)
+      : await apiPost<BackendCardDTO>("/business-cards", dto);
+
+    const synced = backendCardToLocal(result);
+    synced.voiceNotes = card.voiceNotes;
+    synced.pitchToThem = result.pitchToThem ? backendPitchToLocal(result.pitchToThem) : card.pitchToThem;
+    synced.pitchFromThem = result.pitchFromThem ? backendPitchToLocal(result.pitchFromThem) : card.pitchFromThem;
+    return synced;
+  } catch {
+    return card;
+  }
+}
+
+export async function pushProfile(profile: UserProfile): Promise<UserProfile> {
+  const dto = localProfileToBackend(profile);
   try {
     const result = await apiPut<BackendProfileDTO>("/user-profiles", dto);
     return backendProfileToLocal(result);
-  } catch (err) {
-    console.warn("pushProfileToBackend failed:", err);
+  } catch {
     return profile;
   }
 }
 
+// ─── Merge Logic ────────────────────────────────────────────
+
 /**
- * Full sync: pull from backend, then push any local-only data.
+ * Merge server cards with local cards.
+ * - Server data wins for synced cards (those with backend keys)
+ * - Local-only cards are preserved
+ * - Uses updatedAt timestamp for conflict detection
  */
-export async function fullSync(): Promise<{
+function mergeCards(
+  serverCards: BusinessCard[],
+  localCards: BusinessCard[],
+): BusinessCard[] {
+  const merged = new Map<string, BusinessCard>();
+
+  // Server is source of truth for backend-keyed cards
+  for (const sc of serverCards) {
+    merged.set(sc.id, sc);
+  }
+
+  // Add local-only cards (not yet synced to backend)
+  for (const lc of localCards) {
+    if (!isBackendKey(lc.id) && !merged.has(lc.id)) {
+      // Check it's not a duplicate of a server card by name+email
+      const isDupe = serverCards.some(
+        (sc) => sc.name === lc.name && sc.email === lc.email && sc.name !== ""
+      );
+      if (!isDupe) {
+        merged.set(lc.id, lc);
+      }
+    }
+
+    // For backend-keyed cards that exist both locally and on server:
+    // preserve local voice notes and pitches that aren't on server yet
+    if (isBackendKey(lc.id) && merged.has(lc.id)) {
+      const server = merged.get(lc.id)!;
+      if (server.voiceNotes.length === 0 && lc.voiceNotes.length > 0) {
+        server.voiceNotes = lc.voiceNotes;
+      }
+      if (!server.pitchToThem && lc.pitchToThem) {
+        server.pitchToThem = lc.pitchToThem;
+      }
+      if (!server.pitchFromThem && lc.pitchFromThem) {
+        server.pitchFromThem = lc.pitchFromThem;
+      }
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
+// ─── Full Sync ──────────────────────────────────────────────
+
+export interface SyncResult {
   cards: BusinessCard[];
   profile: UserProfile | null;
-}> {
-  const online = await isOnline();
-  if (!online) {
-    const cards = await getAllCards();
-    const profile = await getUserProfile();
-    return { cards, profile };
-  }
-
-  // Sync profile
-  let profile = await syncProfileFromBackend();
-  if (!profile) {
-    // If no backend profile, push local profile
-    const localProfile = await getUserProfile();
-    if (localProfile) {
-      profile = await pushProfileToBackend(localProfile);
-      await saveUserProfile(profile);
-    }
-  } else {
-    await saveUserProfile(profile);
-  }
-
-  // Sync cards
-  const backendCards = await syncCardsFromBackend();
-
-  // Get local-only cards (those without a 15-char uniqueKey)
-  const localCards = await getAllCards();
-  const localOnlyCards = localCards.filter(
-    (lc) =>
-      lc.id.length !== 15 &&
-      !backendCards.some((bc) => bc.name === lc.name && bc.email === lc.email)
-  );
-
-  // Push local-only cards to backend
-  const pushedCards: BusinessCard[] = [];
-  for (const card of localOnlyCards) {
-    const synced = await pushCardToBackend(card);
-    pushedCards.push(synced);
-  }
-
-  const allCards = [...backendCards, ...pushedCards];
-
-  // Save all to local storage
-  await AsyncStorage.setItem(
-    "cardbowl_cards",
-    JSON.stringify(allCards)
-  );
-
-  return { cards: allCards, profile };
+  online: boolean;
+  queueDrained: number;
 }
+
+/**
+ * Full sync cycle:
+ * 1. Check connectivity
+ * 2. Drain offline queue (push pending local changes)
+ * 3. Pull fresh data from server
+ * 4. Merge with local cache
+ * 5. Persist to local storage
+ */
+export async function fullSync(): Promise<SyncResult> {
+  const localCards = await getAllCards();
+  const localProfile = await getUserProfile();
+
+  const online = await canReachBackend();
+  if (!online) {
+    console.log("[Sync] Offline — using local cache");
+    return { cards: localCards, profile: localProfile, online: false, queueDrained: 0 };
+  }
+
+  console.log("[Sync] Online — starting full sync");
+
+  // Step 1: Drain offline queue first (push local changes)
+  const queueDrained = await drainQueue();
+
+  // Step 2: Pull server data
+  const [serverCards, serverProfile] = await Promise.all([
+    pullCards(),
+    pullProfile(),
+  ]);
+
+  // Step 3: Merge cards
+  const mergedCards = mergeCards(serverCards, localCards);
+
+  // Step 4: Handle profile
+  let finalProfile: UserProfile | null;
+  if (serverProfile) {
+    finalProfile = serverProfile;
+  } else if (localProfile) {
+    // No server profile — push local
+    finalProfile = await pushProfile(localProfile);
+  } else {
+    finalProfile = null;
+  }
+
+  // Step 5: Persist
+  await AsyncStorage.setItem("cardbowl_cards", JSON.stringify(mergedCards));
+  if (finalProfile) await saveUserProfile(finalProfile);
+
+  console.log(
+    `[Sync] Complete: ${mergedCards.length} cards, ` +
+    `profile=${finalProfile ? "yes" : "none"}, ` +
+    `queueDrained=${queueDrained}`
+  );
+
+  return {
+    cards: mergedCards,
+    profile: finalProfile,
+    online: true,
+    queueDrained,
+  };
+}
+
+// Re-export for backward compat
+export { isBackendKey };

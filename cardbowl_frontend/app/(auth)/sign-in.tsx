@@ -3,7 +3,6 @@ import { Link } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -28,6 +27,7 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [apiError, setApiError] = useState<string | null>(null);
 
   function validate(): boolean {
     const newErrors: typeof errors = {};
@@ -50,12 +50,13 @@ export default function SignInScreen() {
   async function handleSignIn() {
     if (!validate()) return;
 
+    setApiError(null);
     setLoading(true);
     try {
       await signIn(email.trim().toLowerCase(), password);
     } catch (err: any) {
-      const message = err?.message || "Sign in failed. Please try again.";
-      Alert.alert("Sign In Failed", message);
+      const msg = err?.message || "Sign in failed. Please check your connection and try again.";
+      setApiError(msg);
     } finally {
       setLoading(false);
     }
@@ -93,6 +94,19 @@ export default function SignInScreen() {
             Sign in to your account
           </Text>
 
+          {/* API Error Banner */}
+          {apiError && (
+            <View style={[styles.errorBanner, { backgroundColor: colors.destructive + "15", borderColor: colors.destructive + "40" }]}>
+              <Feather name="alert-circle" size={16} color={colors.destructive} />
+              <Text style={[styles.errorBannerText, { color: colors.destructive }]}>
+                {apiError}
+              </Text>
+              <Pressable onPress={() => setApiError(null)} hitSlop={8}>
+                <Feather name="x" size={16} color={colors.destructive} />
+              </Pressable>
+            </View>
+          )}
+
           {/* Email */}
           <View style={styles.fieldGroup}>
             <Text style={[styles.label, { color: colors.foreground }]}>Email</Text>
@@ -117,6 +131,7 @@ export default function SignInScreen() {
                 onChangeText={(t) => {
                   setEmail(t);
                   if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
+                  if (apiError) setApiError(null);
                 }}
                 placeholder="you@example.com"
                 placeholderTextColor={colors.mutedForeground}
@@ -161,6 +176,7 @@ export default function SignInScreen() {
                   setPassword(t);
                   if (errors.password)
                     setErrors((e) => ({ ...e, password: undefined }));
+                  if (apiError) setApiError(null);
                 }}
                 placeholder="Enter your password"
                 placeholderTextColor={colors.mutedForeground}
@@ -186,6 +202,17 @@ export default function SignInScreen() {
                 {errors.password}
               </Text>
             )}
+          </View>
+
+          {/* Forgot Password */}
+          <View style={styles.forgotRow}>
+            <Link href="/(auth)/forgot-password" asChild>
+              <Pressable>
+                <Text style={[styles.forgotText, { color: colors.primary }]}>
+                  Forgot password?
+                </Text>
+              </Pressable>
+            </Link>
           </View>
 
           {/* Sign In Button */}
@@ -267,6 +294,21 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     marginBottom: 28,
   },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    lineHeight: 18,
+  },
   fieldGroup: {
     marginBottom: 20,
   },
@@ -300,6 +342,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     marginTop: 6,
     marginLeft: 4,
+  },
+  forgotRow: {
+    alignItems: "flex-end",
+    marginBottom: 8,
+    marginTop: -8,
+  },
+  forgotText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
   },
   button: {
     height: 52,

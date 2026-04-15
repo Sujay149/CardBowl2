@@ -394,6 +394,27 @@ export default function ProfileScreen() {
   const cardHeight = useMemo(() => Math.round(cardWidth * 0.56), [cardWidth]);
 
   const [sharing, setSharing] = useState(false);
+  const showSignOutLabel = viewportWidth >= 420;
+
+  const handleSignOut = async () => {
+    // signOut() clears storage + sets isAuthenticated=false.
+    // The route guard in _layout.tsx handles the redirect automatically.
+    await signOut();
+  };
+
+  const confirmSignOut = () => {
+    // Alert.alert doesn't work on web, use window.confirm as fallback
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to sign out?")) {
+        handleSignOut();
+      }
+    } else {
+      Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Sign Out", style: "destructive", onPress: handleSignOut },
+      ]);
+    }
+  };
 
   const shareECard = async () => {
     if (!profile) return;
@@ -644,6 +665,13 @@ export default function ProfileScreen() {
           <Feather name="credit-card" size={16} color={colors.gold} />
           <Text style={[styles.importBtnText, { color: colors.gold }]}>Import from Your Card</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.signOutBtn, { borderColor: colors.destructive, marginTop: 24 }]}
+          onPress={confirmSignOut}
+        >
+          <Feather name="log-out" size={16} color={colors.destructive} />
+          <Text style={[styles.signOutText, { color: colors.destructive }]}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -732,16 +760,32 @@ export default function ProfileScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: topPad + 16, paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 20 },
+        {
+          paddingTop: topPad + 16,
+          paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 120,
+        },
       ]}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.profileHeader}>
         <Text style={[styles.title, { color: colors.foreground }]}>My Profile</Text>
-        <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border }]} onPress={startEdit}>
-          <Feather name="edit-2" size={14} color={colors.primary} />
-          <Text style={[styles.editBtnText, { color: colors.primary }]}>Edit</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border }]} onPress={startEdit}>
+            <Feather name="edit-2" size={14} color={colors.primary} />
+            <Text style={[styles.editBtnText, { color: colors.primary }]}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.signOutBtn, { borderColor: colors.destructive }]}
+            accessibilityRole="button"
+            accessibilityLabel="Sign Out"
+            onPress={confirmSignOut}
+          >
+            <Feather name="log-out" size={16} color={colors.destructive} />
+            {showSignOutLabel ? (
+              <Text style={[styles.signOutText, { color: colors.destructive }]}>Sign Out</Text>
+            ) : null}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── E-Card ── */}
@@ -850,22 +894,6 @@ export default function ProfileScreen() {
             Signed in as {user.email}
           </Text>
         ) : null}
-        <TouchableOpacity
-          style={[styles.signOutBtn, { borderColor: colors.destructive }]}
-          onPress={() =>
-            Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Sign Out",
-                style: "destructive",
-                onPress: signOut,
-              },
-            ])
-          }
-        >
-          <Feather name="log-out" size={16} color={colors.destructive} />
-          <Text style={[styles.signOutText, { color: colors.destructive }]}>Sign Out</Text>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -898,6 +926,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   title: { fontSize: 28, fontWeight: "800" },
   editBtn: {
@@ -1021,11 +1054,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 4,
+    minWidth: 42,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
     marginTop: 4,
+    paddingHorizontal: 10,
   },
   signOutText: { fontSize: 15, fontWeight: "600" },
 });

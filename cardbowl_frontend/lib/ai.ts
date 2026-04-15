@@ -2,10 +2,6 @@ import { BusinessCard, UserProfile, PitchResult } from "./storage";
 import { getAccessToken, API_BASE } from "./api";
 import * as FileSystem from "expo-file-system";
 
-/**
- * Post JSON to backend with auth token. Falls back to unauthenticated
- * for public endpoints (OCR, enrich, pitch).
- */
 async function postToBackend<T>(
   path: string,
   body: unknown
@@ -19,11 +15,22 @@ async function postToBackend<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const url = `${API_BASE}${path}`;
+  console.log("[AI] POST:", url);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Cannot reach server at ${API_BASE}. ` +
+      `Make sure your backend is running. (${err?.message})`
+    );
+  }
 
   const json = await res.json().catch(() => ({}));
 
@@ -33,7 +40,6 @@ async function postToBackend<T>(
     throw new Error(msg);
   }
 
-  // Unwrap ApiResponse wrapper
   if (json && typeof json === "object" && "data" in json) {
     return json.data as T;
   }

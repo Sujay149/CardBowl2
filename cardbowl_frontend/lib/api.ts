@@ -1,11 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
+
+// ─── Constants ──────────────────────────────────────────────
 
 const AUTH_KEYS = {
   ACCESS_TOKEN: "cardbowl_access_token",
   REFRESH_TOKEN: "cardbowl_refresh_token",
   USER: "cardbowl_user",
 };
+
+// ─── Types ──────────────────────────────────────────────────
 
 export interface AuthUser {
   uniqueKey: string;
@@ -25,103 +30,66 @@ export interface ApiResponse<T> {
   data: T;
 }
 
-function normalizeForPlatform(base: string): string {
+// ─── API Base Resolution ────────────────────────────────────
+
+function getExpoDevHost(): string {
   try {
-    const parsed = new URL(base);
-
-    // 10.0.2.2 is Android emulator-only; browser builds must call localhost instead.
-    if (Platform.OS === "web" && parsed.hostname === "10.0.2.2") {
-      parsed.hostname = "localhost";
-      return parsed.toString().replace(/\/$/, "");
+    const c = Constants as any;
+    const candidates: string[] = [
+      c.expoConfig?.hostUri,
+      c.manifest?.debuggerHost,
+      c.manifest?.hostUri,
+      c.manifest2?.extra?.expoGo?.debuggerHost,
+      c.manifest2?.extra?.expoClient?.hostUri,
+    ];
+    for (const raw of candidates) {
+      if (typeof raw === "string" && raw.includes(":")) {
+        const host = raw.split(":")[0]?.trim();
+        if (host && host !== "127.0.0.1" && host !== "localhost") {
+          return host;
+        }
+      }
     }
-
-    // Android emulator cannot reach host localhost directly.
-    if (
-      Platform.OS === "android" &&
-      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
-    ) {
-      parsed.hostname = "10.0.2.2";
-      return parsed.toString().replace(/\/$/, "");
-    }
-
-    return base;
-  } catch {
-    return base;
-  }
+  } catch {}
+  return "";
 }
 
 function resolveApiBase(): string {
-  const explicit = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  const BACKEND_PORT = "8080";
+  const devHost = getExpoDevHost();
+
+  // 1. Explicit env var
+  const explicit =
+    process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ||
+    process.env.EXPO_PUBLIC_API_URL?.trim();
   if (explicit) {
-    const noSlash = explicit.replace(/\/$/, "");
-    const withoutApiSuffix = noSlash.replace(/\/api$/i, "");
-    const base = normalizeForPlatform(withoutApiSuffix);
-    console.log("[API] Using EXPO_PUBLIC_API_BASE_URL:", base);
+    let base = explicit.replace(/\/+$/, "").replace(/\/api$/i, "");
+    // On native device, rewrite localhost to LAN IP
+    if (Platform.OS !== "web" && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(base) && devHost) {
+      base = base.replace(/(localhost|127\.0\.0\.1)/, devHost);
+    }
+    console.log("[API] Base from env:", base);
     return base;
   }
 
-  const domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
-  if (!domain) {
-    const fallback = normalizeForPlatform("http://localhost:8080");
-    console.log("[API] No env vars set, defaulting to", fallback);
-    return fallback;
+  // 2. Auto-detect from Expo dev host
+  if (Platform.OS !== "web" && devHost) {
+    const base = `http://${devHost}:${BACKEND_PORT}`;
+    console.log("[API] Base auto-detected:", base);
+    return base;
   }
 
-  const hasProtocol = /^https?:\/\//i.test(domain);
-  const protocol = /(localhost|127\.0\.0\.1|10\.0\.2\.2)/.test(domain)
-    ? "http"
-    : "https";
-  const normalized = hasProtocol ? domain : `${protocol}://${domain}`;
-  return normalizeForPlatform(normalized.replace(/\/$/, ""));
+  // 3. Fallback
+  const fallback = Platform.OS === "web"
+    ? "http://localhost:8080"
+    : `http://${devHost || "10.50.67.68"}:${BACKEND_PORT}`;
+  console.log("[API] Base fallback:", fallback);
+  return fallback;
 }
 
 const API_BASE = resolveApiBase();
 
-function getApiBaseCandidates(): string[] {
-  const candidates = [API_BASE];
-  if (/\/api$/i.test(API_BASE)) {
-    candidates.push(API_BASE.replace(/\/api$/i, ""));
-  }
-  return candidates.filter((value, index, arr) => arr.indexOf(value) === index);
-}
-
-async function fetchWithBaseFallback(
-  path: string,
-  options: RequestInit,
-  retryOnStatuses: number[] = [403, 404]
-): Promise<Response> {
-  const bases = getApiBaseCandidates();
-  let lastResponse: Response | null = null;
-  let lastError: unknown = null;
-
-  for (let i = 0; i < bases.length; i += 1) {
-    const base = bases[i];
-    const isLast = i === bases.length - 1;
-    try {
-      const response = await fetch(`${base}${path}`, options);
-      lastResponse = response;
-
-      if (!isLast && retryOnStatuses.includes(response.status)) {
-        console.log(`[API] Retrying ${path} with fallback base after ${response.status}`);
-        continue;
-      }
-
-      return response;
-    } catch (error) {
-      lastError = error;
-      if (isLast) {
-        throw error;
-      }
-    }
-  }
-
-  if (lastResponse) {
-    return lastResponse;
-  }
-  throw lastError ?? new Error("Network error");
-}
-
-// --- Token storage ---
+// ─── Token Storage ──────────────────────────────────────────
 
 export async function getAccessToken(): Promise<string | null> {
   return AsyncStorage.getItem(AUTH_KEYS.ACCESS_TOKEN);
@@ -152,14 +120,14 @@ export async function clearAuth(): Promise<void> {
     AUTH_KEYS.ACCESS_TOKEN,
     AUTH_KEYS.REFRESH_TOKEN,
     AUTH_KEYS.USER,
-    // Clear user-specific data so next login gets a fresh sync
     "cardbowl_user_profile",
     "cardbowl_cards",
     "cardbowl_connections",
+    "cardbowl_offline_queue",
   ]);
 }
 
-// --- Token refresh ---
+// ─── Token Refresh ──────────────────────────────────────────
 
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -168,7 +136,7 @@ async function doRefreshToken(): Promise<string | null> {
   if (!currentRefresh) return null;
 
   try {
-    const res = await fetchWithBaseFallback("/auth/refresh-token", {
+    const res = await fetch(`${API_BASE}/auth/refresh-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken: currentRefresh }),
@@ -199,18 +167,74 @@ async function doRefreshToken(): Promise<string | null> {
 
 async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
-    refreshPromise = doRefreshToken().finally(() => {
-      refreshPromise = null;
-    });
+    refreshPromise = doRefreshToken().finally(() => { refreshPromise = null; });
   }
   return refreshPromise;
 }
 
-// --- Authenticated fetch ---
+// ─── Retry with Exponential Backoff ─────────────────────────
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export class NetworkError extends Error {
+  constructor(message: string, public readonly url: string) {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
+
+export class ServerError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ServerError";
+  }
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 2,
+): Promise<Response> {
+  let lastErr: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+
+      // Don't retry client errors (4xx) — they won't change
+      if (res.status >= 400 && res.status < 500) return res;
+
+      // Retry on 5xx server errors
+      if (res.status >= 500 && attempt < maxRetries) {
+        console.log(`[API] Server error ${res.status}, retry ${attempt + 1}/${maxRetries}`);
+        await sleep(Math.min(1000 * 2 ** attempt, 8000));
+        continue;
+      }
+
+      return res;
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt < maxRetries) {
+        const delay = Math.min(1000 * 2 ** attempt, 8000);
+        console.log(`[API] Network error, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+        await sleep(delay);
+      }
+    }
+  }
+
+  throw new NetworkError(
+    `Cannot reach server at ${API_BASE}. ` +
+    `Ensure backend is running and phone is on the same Wi-Fi. ` +
+    `(${lastErr?.message ?? "Network request failed"})`,
+    url,
+  );
+}
+
+// ─── Authenticated Fetch ────────────────────────────────────
 
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<T> {
   let token = await getAccessToken();
 
@@ -219,33 +243,33 @@ export async function apiFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  let res = await fetchWithBaseFallback(path, { ...options, headers });
+  const url = `${API_BASE}${path}`;
+  let res = await fetchWithRetry(url, { ...options, headers });
 
-  // Some backend paths return 403 for expired/invalid tokens.
+  // Token expired → refresh once and retry
   if ((res.status === 401 || res.status === 403) && token) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetchWithBaseFallback(path, { ...options, headers });
+      res = await fetchWithRetry(url, { ...options, headers }, 0);
     }
   }
 
   if (res.status === 401 || res.status === 403) {
     await clearAuth();
+    throw new ServerError("Session expired. Please sign in again.", res.status);
   }
 
   const json: ApiResponse<T> = await res.json().catch(() => ({
     success: false,
-    message: "Network error",
+    message: "Invalid response from server",
     data: null as any,
   }));
 
   if (!res.ok || !json.success) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    throw new ServerError(json.message || `Request failed (${res.status})`, res.status);
   }
 
   return json.data;
@@ -256,73 +280,49 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  return apiFetch<T>(path, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
-  return apiFetch<T>(path, {
-    method: "PUT",
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  return apiFetch<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
 }
 
-export async function apiUpload<T>(
-  path: string,
-  formData: FormData
-): Promise<T> {
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   let token = await getAccessToken();
-
   const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  let res = await fetchWithBaseFallback(path, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  const url = `${API_BASE}${path}`;
+  let res = await fetchWithRetry(url, { method: "POST", headers, body: formData });
 
   if ((res.status === 401 || res.status === 403) && token) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetchWithBaseFallback(path, {
-        method: "POST",
-        headers,
-        body: formData,
-      });
+      res = await fetchWithRetry(url, { method: "POST", headers, body: formData }, 0);
     }
-  }
-
-  if (res.status === 401 || res.status === 403) {
-    await clearAuth();
   }
 
   const json: ApiResponse<T> = await res.json().catch(() => ({
     success: false,
-    message: "Network error",
+    message: "Invalid response from server",
     data: null as any,
   }));
 
   if (!res.ok || !json.success) {
-    throw new Error(json.message || `Upload failed (${res.status})`);
+    throw new ServerError(json.message || `Upload failed (${res.status})`, res.status);
   }
 
   return json.data;
 }
 
-// --- Public (no-auth) fetch for auth endpoints ---
+// ─── Public (no-auth) Fetch ─────────────────────────────────
 
-export async function apiPublicPost<T>(
-  path: string,
-  body: unknown
-): Promise<T> {
-  console.log("[API] POST (public):", `${API_BASE}${path}`);
-  const res = await fetchWithBaseFallback(path, {
+export async function apiPublicPost<T>(path: string, body: unknown): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  console.log("[API] POST (public):", url);
+
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -330,12 +330,12 @@ export async function apiPublicPost<T>(
 
   const json: ApiResponse<T> = await res.json().catch(() => ({
     success: false,
-    message: "Network error",
+    message: "Invalid response from server",
     data: null as any,
   }));
 
   if (!res.ok || !json.success) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    throw new ServerError(json.message || `Request failed (${res.status})`, res.status);
   }
 
   return json.data;

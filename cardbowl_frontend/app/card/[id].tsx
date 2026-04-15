@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   Alert,
   Linking,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { shareCard } from "@/lib/export";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCards } from "@/context/CardsContext";
 import { useProfile } from "@/context/ProfileContext";
@@ -23,6 +25,246 @@ import { GradeBar } from "@/components/GradeBar";
 import { VoiceNotePlayer } from "@/components/VoiceNotePlayer";
 import { VoiceRecorder } from "@/components/VoiceRecorder";
 import { useColors } from "@/hooks/useColors";
+
+const CARD_BG = "#fbfbf6";
+const CARD_BORDER = "#e0d6c8";
+const NAVY = "#0f172a";
+const COPPER = "#c4893f";
+const COPPER_LIGHT = "#d4a05a";
+const TEXT_DARK = "#0f172a";
+const TEXT_MID = "#334155";
+const TEXT_MUTED = "#64748b";
+
+interface ECardData {
+  id?: string;
+  name?: string;
+  title?: string;
+  company?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+  bio?: string;
+  companyLogo?: string;
+}
+
+function ECardFront({
+  profile,
+  qrPayload,
+  w,
+  h,
+}: {
+  profile: ECardData;
+  qrPayload: string;
+  w: number;
+  h: number;
+}) {
+  const circleD = h * 1.15;
+  const circleRight = w * -0.16;
+  const qrSize = Math.round(Math.min(w * 0.2, h * 0.42));
+  const nameFontSize = Math.max(14, Math.round(w * 0.052));
+  const roleFontSize = Math.max(9, Math.round(w * 0.028));
+  const infoFontSize = Math.max(8, Math.round(w * 0.026));
+  const iconSize = Math.max(8, Math.round(w * 0.026));
+  const contentPadH = Math.round(w * 0.045);
+  const contentPadV = Math.round(h * 0.1);
+  const logoSize = Math.round(w * 0.085);
+
+  const initials = profile.name
+    ? profile.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+    : "CB";
+
+  const nameParts = (profile.name || "Unknown").split(" ");
+  const firstName = nameParts.slice(0, -1).join(" ") || nameParts[0];
+  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+
+  return (
+    <View style={[previewCardStyles.card, { width: w, height: h, backgroundColor: CARD_BG, borderColor: CARD_BORDER }]}> 
+      <View
+        style={[
+          previewCardStyles.halfCircle,
+          {
+            width: circleD,
+            height: circleD,
+            borderRadius: circleD / 2,
+            backgroundColor: NAVY,
+            right: circleRight,
+            top: (h - circleD) / 2,
+          },
+        ]}
+      />
+
+      <View
+        style={[
+          previewCardStyles.frontQrWrap,
+          {
+            right: Math.round(w * 0.06),
+            top: (h - qrSize - 12) / 2,
+          },
+        ]}
+      >
+        <View style={previewCardStyles.qrBg}>
+          <QRCode value={qrPayload || "cardbowl"} size={qrSize} backgroundColor="#fff" color={NAVY} ecl="L" />
+        </View>
+      </View>
+
+      <View style={[previewCardStyles.frontContent, { paddingHorizontal: contentPadH, paddingVertical: contentPadV }]}> 
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: Math.round(h * 0.06) }}>
+          <View style={[previewCardStyles.logoCircle, { width: logoSize, height: logoSize, borderRadius: logoSize / 2, backgroundColor: NAVY }]}>
+            {profile.companyLogo ? (
+              <Image source={{ uri: profile.companyLogo }} style={{ width: logoSize, height: logoSize, borderRadius: logoSize / 2 }} resizeMode="cover" />
+            ) : (
+              <Text style={{ color: "#fff", fontWeight: "900", fontSize: logoSize * 0.5 }}>{initials}</Text>
+            )}
+          </View>
+          <View>
+            <Text style={{ color: TEXT_DARK, fontSize: Math.max(7, w * 0.02), fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.6 }} numberOfLines={1}>
+              {profile.company || "CARD CONTACT"}
+            </Text>
+            {profile.bio ? (
+              <Text style={{ color: TEXT_MUTED, fontSize: Math.max(5, w * 0.015), textTransform: "uppercase", letterSpacing: 0.4 }} numberOfLines={1}>
+                {profile.bio}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <Text style={{ fontSize: nameFontSize, color: TEXT_DARK }} numberOfLines={1}>
+          <Text style={{ fontWeight: "400" }}>{firstName} </Text>
+          <Text style={{ fontWeight: "900" }}>{lastName}</Text>
+        </Text>
+
+        <Text style={{ fontSize: roleFontSize, fontWeight: "500", color: TEXT_MID, marginBottom: Math.round(h * 0.04) }} numberOfLines={1}>
+          {profile.title || "Contact"}
+        </Text>
+
+        <View style={{ gap: Math.round(h * 0.028) }}>
+          {profile.phone ? (
+            <View style={previewCardStyles.infoRow}>
+              <Feather name="phone" size={iconSize} color={COPPER} />
+              <Text style={{ fontSize: infoFontSize, color: TEXT_MID }} numberOfLines={1}>{profile.phone}</Text>
+            </View>
+          ) : null}
+          {profile.email ? (
+            <View style={previewCardStyles.infoRow}>
+              <Feather name="mail" size={iconSize} color={COPPER} />
+              <Text style={{ fontSize: infoFontSize, color: TEXT_MID }} numberOfLines={1}>{profile.email}</Text>
+            </View>
+          ) : null}
+          {profile.website ? (
+            <View style={previewCardStyles.infoRow}>
+              <Feather name="globe" size={iconSize} color={COPPER} />
+              <Text style={{ fontSize: infoFontSize, color: TEXT_MID }} numberOfLines={1}>{profile.website}</Text>
+            </View>
+          ) : null}
+          {profile.address ? (
+            <View style={previewCardStyles.infoRow}>
+              <Feather name="map-pin" size={iconSize} color={COPPER} />
+              <Text style={{ fontSize: infoFontSize, color: TEXT_MID, flex: 1 }} numberOfLines={2}>{profile.address}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ECardBack({
+  profile,
+  qrPayload,
+  w,
+  h,
+}: {
+  profile: ECardData;
+  qrPayload: string;
+  w: number;
+  h: number;
+}) {
+  const circleD = h * 1.15;
+  const circleLeft = w * -0.16;
+  const logoSize = Math.round(w * 0.12);
+  const qrSize = Math.round(Math.min(w * 0.22, h * 0.4));
+  const companyFontSize = Math.max(8, Math.round(w * 0.024));
+
+  const initials = profile.name
+    ? profile.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+    : "CB";
+
+  return (
+    <View style={[previewCardStyles.card, { width: w, height: h, backgroundColor: CARD_BG, borderColor: CARD_BORDER }]}> 
+      <View
+        style={[
+          previewCardStyles.halfCircle,
+          {
+            width: circleD,
+            height: circleD,
+            borderRadius: circleD / 2,
+            backgroundColor: NAVY,
+            left: circleLeft,
+            top: (h - circleD) / 2,
+          },
+        ]}
+      />
+
+      <View
+        style={{
+          position: "absolute",
+          left: Math.round(w * 0.12),
+          top: (h - qrSize - 10) / 2,
+        }}
+      >
+        <View style={[previewCardStyles.backQrFrame, { backgroundColor: NAVY, padding: 5 }]}> 
+          <QRCode value={qrPayload || "cardbowl"} size={qrSize} backgroundColor="#fff" color={NAVY} ecl="L" />
+        </View>
+      </View>
+
+      <View
+        style={{
+          position: "absolute",
+          right: Math.round(w * 0.09),
+          top: h * 0.22,
+          alignItems: "center",
+          maxWidth: w * 0.5,
+          gap: 8,
+        }}
+      >
+        <View
+          style={{
+            width: logoSize,
+            height: logoSize,
+            borderRadius: logoSize / 2,
+            overflow: "hidden",
+            backgroundColor: NAVY,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {profile.companyLogo ? (
+            <Image source={{ uri: profile.companyLogo }} style={{ width: logoSize, height: logoSize }} resizeMode="cover" />
+          ) : (
+            <Text style={{ color: "#fff", fontWeight: "900", fontSize: logoSize * 0.42 }}>{initials}</Text>
+          )}
+        </View>
+        <Text
+          style={{
+            color: TEXT_DARK,
+            fontWeight: "800",
+            fontSize: companyFontSize,
+            letterSpacing: 0.6,
+            textTransform: "uppercase",
+            textAlign: "center",
+          }}
+          numberOfLines={2}
+        >
+          {profile.company || "CardBowl Contact"}
+        </Text>
+        <Text style={{ color: TEXT_MUTED, fontSize: Math.max(7, w * 0.02), textAlign: "center" }} numberOfLines={2}>
+          Scan to save this contact
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 function PitchBlock({
   pitch,
@@ -136,13 +378,18 @@ export default function CardDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth } = useWindowDimensions();
   const { getCardById, addOrUpdateCard, removeCard } = useCards();
   const { profile } = useProfile();
   const card = getCardById(id);
 
   const [generatingPitch, setGeneratingPitch] = useState<"to-them" | "from-them" | null>(null);
   const [showRecorder, setShowRecorder] = useState(false);
+  const [showBack, setShowBack] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  const cardWidth = useMemo(() => Math.min(Math.max(viewportWidth - 32, 280), 560), [viewportWidth]);
+  const cardHeight = useMemo(() => Math.round(cardWidth * 0.56), [cardWidth]);
 
   const goBackOrCards = () => {
     if (router.canGoBack()) {
@@ -246,6 +493,38 @@ export default function CardDetailScreen() {
     ? card.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
 
+  const eCardData: ECardData = {
+    id: card.id,
+    name: card.name,
+    title: card.title,
+    company: card.company,
+    email: card.email,
+    phone: card.phone,
+    website: card.website,
+    address: card.address,
+    bio: card.notes,
+    companyLogo: card.imageFront,
+  };
+
+  const qrPayload = JSON.stringify({
+    type: "cardbowl-connect",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    user: {
+      id: card.id,
+      name: card.name || "",
+      title: card.title || "",
+      company: card.company || "",
+      email: card.email || "",
+      phone: card.phone || "",
+      website: card.website || "",
+      address: card.address || "",
+      linkedin: card.linkedin || "",
+      twitter: card.twitter || "",
+      keywords: card.keywords || [],
+    },
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View
@@ -280,27 +559,18 @@ export default function CardDetailScreen() {
           { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 20 },
         ]}
       >
-        {/* Card Header */}
-        <View style={[styles.cardHeader, { backgroundColor: colors.navy }]}>
-          <View style={[styles.cardAvatar, { backgroundColor: colors.primary }]}>
-            {card.imageFront ? (
-              <Image source={{ uri: card.imageFront }} style={styles.avatarImg} />
-            ) : (
-              <Text style={styles.avatarInitials}>{initials}</Text>
-            )}
+        <View style={styles.eCardWrap}>
+          <View style={{ alignItems: "flex-end" }}>
+            <TouchableOpacity style={[styles.flipBtn, { backgroundColor: NAVY }]} onPress={() => setShowBack((v) => !v)}>
+              <Feather name="refresh-cw" size={13} color={COPPER_LIGHT} />
+              <Text style={[styles.flipBtnText, { color: COPPER_LIGHT }]}>Flip Card</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={[styles.cardName, { color: "#fff" }]}>{card.name}</Text>
-          {card.title ? (
-            <Text style={[styles.cardTitle, { color: colors.gold }]}>{card.title}</Text>
-          ) : null}
-          {card.company ? (
-            <Text style={[styles.cardCompany, { color: "#94a3b8" }]}>{card.company}</Text>
-          ) : null}
-          {card.category ? (
-            <View style={[styles.categoryBadge, { backgroundColor: colors.primary + "30" }]}>
-              <Text style={[styles.categoryText, { color: "#dbeafe" }]}>{card.category}</Text>
-            </View>
-          ) : null}
+          {!showBack ? (
+            <ECardFront profile={eCardData} qrPayload={qrPayload} w={cardWidth} h={cardHeight} />
+          ) : (
+            <ECardBack profile={eCardData} qrPayload={qrPayload} w={cardWidth} h={cardHeight} />
+          )}
         </View>
 
         {/* Card Photos */}
@@ -572,6 +842,16 @@ const styles = StyleSheet.create({
   navTitle: { fontSize: 16, fontWeight: "600", flex: 1, textAlign: "center" },
   navActions: { flexDirection: "row", gap: 14 },
   content: { gap: 12, padding: 16 },
+  eCardWrap: { gap: 10 },
+  flipBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  flipBtnText: { fontSize: 12, fontWeight: "700" },
   cardHeader: {
     borderRadius: 16,
     padding: 24,
@@ -702,4 +982,49 @@ const styles = StyleSheet.create({
   notFound: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   notFoundText: { fontSize: 18, fontWeight: "600" },
   backLink: { fontSize: 16, fontWeight: "500" },
+});
+
+const previewCardStyles = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    borderWidth: 0,
+    alignSelf: "center",
+    overflow: "hidden",
+    position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  halfCircle: {
+    position: "absolute",
+  },
+  frontContent: {
+    flex: 1,
+    justifyContent: "center",
+    maxWidth: "58%",
+  },
+  frontQrWrap: {
+    position: "absolute",
+    zIndex: 2,
+  },
+  qrBg: {
+    backgroundColor: "#fff",
+    padding: 4,
+    borderRadius: 6,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  logoCircle: {
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  backQrFrame: {
+    borderRadius: 10,
+  },
 });

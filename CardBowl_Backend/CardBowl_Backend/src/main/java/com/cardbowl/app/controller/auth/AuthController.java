@@ -6,6 +6,7 @@ import com.cardbowl.app.dto.auth.AuthResponseDTO;
 import com.cardbowl.app.dto.auth.LoginRequestDTO;
 import com.cardbowl.app.dto.auth.RefreshTokenRequestDTO;
 import com.cardbowl.app.dto.auth.RegisterRequestDTO;
+import com.cardbowl.app.dto.auth.ResetPasswordRequestDTO;
 import com.cardbowl.app.service.auth.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,5 +40,11 @@ public class AuthController extends BaseController {
     public ResponseEntity<ApiResponse<Object>> refreshToken(@Valid @RequestBody RefreshTokenRequestDTO request) {
         AuthResponseDTO response = authService.refreshToken(request);
         return buildSuccessResponse(HttpStatus.OK, "Token refreshed successfully", response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Object>> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO request) {
+        AuthResponseDTO response = authService.resetPassword(request);
+        return buildSuccessResponse(HttpStatus.OK, "Password reset successfully", response);
     }
 }

@@ -1,5 +1,4 @@
 import * as FileSystem from "expo-file-system";
-import Constants from "expo-constants";
 import { UserProfile } from "./storage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
@@ -121,25 +120,12 @@ function normalizeBackendBases(): string[] {
   if (!raw) return [];
 
   const noSlash = raw.replace(/\/$/, "");
-  const baseOnly = noSlash.toLowerCase().endsWith("/api")
-    ? [noSlash.slice(0, -4)]
-    : [noSlash];
+  // Strip /api suffix if present
+  const base = noSlash.toLowerCase().endsWith("/api")
+    ? noSlash.slice(0, -4)
+    : noSlash;
 
-  const expoHostUri = Constants.expoConfig?.hostUri || "";
-  const expoHost = expoHostUri.split(":")[0]?.trim();
-  const match = noSlash.match(/^https?:\/\/([^/:]+)(:\d+)?(\/api)?$/i);
-  const protocol = noSlash.startsWith("https://") ? "https" : "http";
-  const port = match?.[2] || ":8080";
-  const path = "";
-
-  const hostCandidates = [match?.[1], expoHost, "10.0.2.2", "localhost", "127.0.0.1"]
-    .filter((h): h is string => !!h && h.length > 0)
-    .filter((h, idx, arr) => arr.indexOf(h) === idx);
-
-  const expanded = hostCandidates.map((host) => `${protocol}://${host}${port}${path}`);
-  const all = [...baseOnly, ...expanded];
-
-  return all.filter((value, idx, arr) => arr.indexOf(value) === idx);
+  return [base];
 }
 
 function mapBackendProfileToExtracted(payload: any): ExtractedProfile {
@@ -541,9 +527,26 @@ export async function extractProfileFromCard(
   onStatus?: (msg: string) => void,
 ): Promise<ExtractedProfile> {
   const keys = checkApiKeys();
-  if (!keys.openai && !keys.gemini) {
+
+  // Prefer backend whenever available so server-side provider fallback is used.
+  if (keys.backend) {
     onStatus?.("Using backend AI extraction...");
-    return extractViaBackend(frontUri, backUri);
+    try {
+      return await extractViaBackend(frontUri, backUri);
+    } catch (backendErr: any) {
+      // If no direct keys exist, backend is the only path.
+      if (!keys.openai && !keys.gemini) {
+        throw backendErr;
+      }
+      console.log(
+        `[AI] Backend extraction failed, falling back to direct provider calls: ${backendErr?.message || "unknown error"}`
+      );
+      onStatus?.("Backend unavailable. Falling back to direct AI extraction...");
+    }
+  }
+
+  if (!keys.openai && !keys.gemini) {
+    throw new Error("No direct AI keys configured and backend extraction is unavailable.");
   }
 
   const extractFromOneSide = async (

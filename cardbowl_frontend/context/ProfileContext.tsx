@@ -6,7 +6,8 @@ import React, {
   useCallback,
 } from "react";
 import { UserProfile, getUserProfile, saveUserProfile } from "@/lib/storage";
-import { syncProfileFromBackend, pushProfileToBackend, isOnline } from "@/lib/sync";
+import { pullProfile, pushProfile, canReachBackend } from "@/lib/sync";
+import { enqueue } from "@/lib/offlineQueue";
 import { useAuth } from "@/context/AuthContext";
 
 interface ProfileContextType {
@@ -28,27 +29,27 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = useCallback(async () => {
     setLoading(true);
     try {
-      // Load local first
+      // 1. Hydrate from local cache instantly
       const local = await getUserProfile();
       setProfile(local);
 
-      // Sync from backend if authenticated
-      const online = await isOnline();
+      // 2. Background sync from backend
+      const online = await canReachBackend();
       if (online) {
         setSyncing(true);
         try {
-          const backendProfile = await syncProfileFromBackend();
-          if (backendProfile) {
-            setProfile(backendProfile);
-            await saveUserProfile(backendProfile);
+          const serverProfile = await pullProfile();
+          if (serverProfile) {
+            setProfile(serverProfile);
+            await saveUserProfile(serverProfile);
           } else if (local) {
-            // No backend profile yet - push local
-            const synced = await pushProfileToBackend(local);
+            // No server profile — push local
+            const synced = await pushProfile(local);
             setProfile(synced);
             await saveUserProfile(synced);
           }
         } catch (err) {
-          console.warn("Background profile sync failed:", err);
+          console.warn("[Profile] Background sync failed:", err);
         } finally {
           setSyncing(false);
         }
@@ -58,14 +59,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Re-sync whenever auth state changes (login/logout)
+  // Re-sync when auth changes
   useEffect(() => {
     if (authLoading) return;
-
     if (isAuthenticated) {
       refreshProfile();
     } else {
-      // Logged out — clear local state
       setProfile(null);
       setLoading(false);
     }
@@ -73,20 +72,23 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = useCallback(
     async (p: UserProfile) => {
-      // Save locally first
+      // 1. Save locally first (instant UI update)
       await saveUserProfile(p);
       setProfile(p);
 
-      // Push to backend
-      const online = await isOnline();
+      // 2. Push to backend or queue
+      const online = await canReachBackend();
       if (online) {
         try {
-          const synced = await pushProfileToBackend(p);
+          const synced = await pushProfile(p);
           setProfile(synced);
           await saveUserProfile(synced);
         } catch (err) {
-          console.warn("Profile push to backend failed:", err);
+          console.warn("[Profile] Push failed, queuing:", err);
+          await enqueue("profile_update", p);
         }
+      } else {
+        await enqueue("profile_update", p);
       }
     },
     []

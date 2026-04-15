@@ -33,14 +33,28 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
+    const firstSegment = segments[0];
+    const inAuthGroup = firstSegment === "(auth)";
+    const inProtectedArea =
+      firstSegment === "(tabs)" ||
+      firstSegment === "card" ||
+      firstSegment === "edit" ||
+      firstSegment === "import-card";
 
     if (!isAuthenticated && !inAuthGroup) {
+      // Not logged in and not on auth screens — redirect to sign-in
+      console.log("[Router] Not authenticated, redirecting to sign-in");
       router.replace("/(auth)/sign-in");
     } else if (isAuthenticated && inAuthGroup) {
+      // Logged in but still on auth screens — redirect to tabs
+      console.log("[Router] Authenticated, redirecting to tabs");
       router.replace("/(tabs)");
     }
   }, [isAuthenticated, isLoading, segments]);
+
+  if (isLoading) {
+    return null; // Don't render any routes until auth state is known
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
