@@ -44,5 +44,5 @@ app:
       model: ${OPENAI_MODEL:gpt-4o}
     gemini:
       api-key: ${GEMINI_API_KEY:}
-      model: ${GEMINI_MODEL:gemini-2.5-flash}
+      model: ${GEMINI_MODEL:gemini-2.5-flash} 
    
