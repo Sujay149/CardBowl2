@@ -10,7 +10,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "user_info")
+@Table(name = "users")
 @Getter
 @Setter
 public class UserInfo extends BaseEntityWithUniqueKey {

@@ -341,4 +341,23 @@ export async function apiPublicPost<T>(path: string, body: unknown): Promise<T> 
   return json.data;
 }
 
+export async function apiPublicGet<T>(path: string): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  console.log("[API] GET (public):", url);
+
+  const res = await fetchWithRetry(url, { method: "GET" });
+
+  const json: ApiResponse<T> = await res.json().catch(() => ({
+    success: false,
+    message: "Invalid response from server",
+    data: null as any,
+  }));
+
+  if (!res.ok || !json.success) {
+    throw new ServerError(json.message || `Request failed (${res.status})`, res.status);
+  }
+
+  return json.data;
+}
+
 export { API_BASE, AUTH_KEYS };

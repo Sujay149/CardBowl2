@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Link } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { apiPublicGet } from "@/lib/api";
 
 interface FormErrors {
   firstName?: string;
@@ -40,6 +41,25 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const stats = await apiPublicGet<{ totalUsers?: number }>("/auth/stats");
+        if (alive && typeof stats?.totalUsers === "number") {
+          setTotalUsers(stats.totalUsers);
+        }
+      } catch {
+        // Keep signup flow resilient if stats endpoint is unavailable.
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function validate(): boolean {
     const newErrors: FormErrors = {};
@@ -201,6 +221,11 @@ export default function SignUpScreen() {
           <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
             Start managing your business cards smartly
           </Text>
+          {typeof totalUsers === "number" ? (
+            <Text style={[styles.userCountText, { color: colors.primary }]}> 
+              Join {totalUsers.toLocaleString()} registered users
+            </Text>
+          ) : null}
 
           {/* API Error Banner */}
           {apiError && (
@@ -377,7 +402,12 @@ const styles = StyleSheet.create({
   subheading: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
-    marginBottom: 24,
+    marginBottom: 6,
+  },
+  userCountText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 18,
   },
   nameRow: {
     flexDirection: "row",
